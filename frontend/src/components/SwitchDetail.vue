@@ -121,7 +121,19 @@ watch(() => props.switchId, async (id) => {
   activeTab.value = 'detail'
 
   const cached = detailCache.get(id)
-  if (cached) {
+  const now = Date.now()
+  if (cached && (now - cached.timestamp) < CACHE_TTL) {
+    detail.value = cached.detail
+    switchName.value = cached.detail.name
+    initialLoading.value = false
+    try {
+      assocServers.value = await switchApi.getServers(id)
+    } catch {
+      assocServers.value = []
+    }
+    return
+  } else if (cached) {
+    // 缓存过期，先显示旧数据再静默刷新
     detail.value = cached.detail
     switchName.value = cached.detail.name
     initialLoading.value = false
@@ -130,6 +142,7 @@ watch(() => props.switchId, async (id) => {
     detail.value = null
   }
 
+  // 静默刷新（旧数据还在）
   try {
     const data = await switchApi.getDetail(id)
     detail.value = data
