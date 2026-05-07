@@ -23,13 +23,10 @@
         <div class="canvas-viewport" :style="{ width: canvasWidth + 'px', height: canvas.height + 'px' }">
           <svg class="topology-svg" :viewBox="viewBox">
             <!-- 连线 -->
-            <line
+            <path
               v-for="edge in positionedEdges"
               :key="edge.id"
-              :x1="edge.source.x"
-              :y1="edge.source.y"
-              :x2="edge.target.x"
-              :y2="edge.target.y"
+              :d="edge.pathD"
               :class="['topology-edge', edge.kind, edge.status]"
             />
             <!-- 连线标签 -->
@@ -166,21 +163,59 @@ const nodeMap = computed(() => {
   return map
 })
 
-const positionedEdges = computed(() => edges.value
-  .map(edge => {
-    const source = nodeMap.value.get(edge.source)
-    const target = nodeMap.value.get(edge.target)
-    if (!source || !target) return null
-    return {
-      ...edge,
-      source,
-      target,
-      labelX: Math.round((source.x + target.x) / 2),
-      labelY: Math.round((source.y + target.y) / 2),
-    }
+const positionedEdges = computed(() => {
+  // 统计同一对 (source, target) 的 edge 数量，用于计算偏移
+  const pairCount = {}
+  const pairIndex = {}
+  edges.value.forEach(edge => {
+    const key = `${edge.source}|${edge.target}`
+    if (!pairCount[key]) pairCount[key] = 0
+    pairCount[key]++
   })
-  .filter(Boolean)
-)
+  edges.value.forEach(edge => {
+    const key = `${edge.source}|${edge.target}`
+    if (!(key in pairIndex)) pairIndex[key] = 0
+    pairIndex[key]++
+  })
+
+  return edges.value
+    .map(edge => {
+      const source = nodeMap.value.get(edge.source)
+      const target = nodeMap.value.get(edge.target)
+      if (!source || !target) return null
+
+      const key = `${edge.source}|${edge.target}`
+      const total = pairCount[key] || 1
+      const idx = pairIndex[key]--   // 从大到小
+      const offset = total > 1 ? (idx - (total + 1) / 2) * 18 : 0
+
+      const mx = (source.x + target.x) / 2
+      const my = (source.y + target.y) / 2
+      const dx = target.x - source.x
+      const dy = target.y - source.y
+      const len = Math.sqrt(dx * dx + dy * dy)
+      // 垂直方向单位向量
+      const ux = len > 0 ? -dy / len : 0
+      const uy = len > 0 ? dx / len : 0
+
+      // 两端偏移
+      const sx = source.x + ux * offset
+      const sy = source.y + uy * offset
+      const tx = target.x + ux * offset
+      const ty = target.y + uy * offset
+
+      return {
+        ...edge,
+        source,
+        target,
+        sx, sy, tx, ty,
+        labelX: Math.round(mx + ux * offset),
+        labelY: Math.round(my + uy * offset),
+        pathD: `M${sx},${sy} L${tx},${ty}`,
+      }
+    })
+    .filter(Boolean)
+})
 
 const entityNames = computed(() => {
   const servers = new Map()
