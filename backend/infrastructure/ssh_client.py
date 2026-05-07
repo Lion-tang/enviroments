@@ -536,6 +536,127 @@ def _parse_mac_address_output(raw: str, mac: str) -> dict:
     return {"found": True, "interface": iface, "vlan": vlan, "line": line}
 
 
+def _parse_mac_table_line(line: str) -> dict | None:
+    """
+    Parse a single line from 'display mac-address' output.
+    Returns {mac, interface, vlan} or None if the line doesn't contain a valid MAC entry.
+    """
+    import re
+
+    line_s = line.strip()
+    if not line_s:
+        return None
+    if "display mac-address" in line_s.lower():
+        return None
+    if line_s.startswith("---"):
+        return None
+
+    # Minimal heuristics to avoid junk lines
+    # A valid MAC line should contain at least 10 hex-like chars
+    hex_chars = sum(1 for c in line_s.lower() if c in "0123456789abcdef")
+    if hex_chars < 10:
+        return None
+
+    compact = "".join(c for c in line_s if c in "0123456789abcdefABCDEF").lower()
+    if len(compact) < 10:
+        return None
+
+    # Extract MAC (first contiguous hex group that looks like a MAC)
+    mac = None
+    mac_pattern = re.compile(
+        r'(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}'
+        r'|[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}'
+        r'|[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}'
+        r'|[0-9A-Fa-f]{12}'
+    )
+    mac_match = mac_pattern.search(line_s)
+    if mac_match:
+        raw_mac = mac_match.group(0)
+        # Normalize to xx:xx:xx:xx:xx:xx
+        clean = "".join(c for c in raw_mac.lower() if c in "0123456789abcdef")
+        mac = ":".join(clean[i:i+2] for i in range(0, 12, 2))
+
+    if not mac:
+        return None
+
+    # Extract VLAN (first number that looks reasonable)
+    vlan = None
+    vlan_match = re.search(r"(?<![\w./-])(\d{1,4})(?![\w./-])", line_s)
+    if vlan_match:
+        v = int(vlan_match.group(1))
+        if 1 <= v <= 4094:
+            vlan = str(v)
+
+    # Extract interface name
+    iface = None
+    iface_patterns = [
+        r"(?:X?GigabitEthernet|Ten-GigabitEthernet|FortyGigE|HundredGigE|Ethernet|GE|XGE|Eth-Trunk|Bridge-Aggregation)[\w/.-]+",
+        r"\b(?:Eth|Gi|Te|Twe|Fo|Hu)\d+(?:/\d+)+",
+    ]
+    for pattern in iface_patterns:
+        match = re.search(pattern, line_s, re.IGNORECASE)
+        if match:
+            iface = match.group(0)
+            break
+
+    if not iface:
+        return None
+
+    return {"mac": mac, "interface": iface, "vlan": vlan}
+
+
+def fetch_all_macs_from_switch_via_ssh(
+    ip: str,
+    username: str,
+    password: Optional[str] = None,
+    port: int = 22,
+) -> dict:
+    """
+    Connect to an H3C/Huawei switch once and dump the full MAC address table.
+    Returns a dict: {
+        "mac_map": { "xx:xx:xx:xx:xx:xx": {"interface": ..., "vlan": ...}, ... },
+        "raw_output": ...,
+        "error": ...
+    }
+    """
+    import paramiko
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            ip,
+            port=port,
+            username=username,
+            password=password,
+            timeout=10,
+            look_for_keys=False,
+            allow_agent=False,
+        )
+        raw = _interact_exec(client, "display mac-address | no-more", timeout=30)
+        mac_map = {}
+        for line in raw.splitlines():
+            parsed = _parse_mac_table_line(line)
+            if parsed and parsed["mac"] not in mac_map:
+                mac_map[parsed["mac"]] = {
+                    "interface": parsed["interface"],
+                    "vlan": parsed["vlan"],
+                }
+        return {
+            "mac_map": mac_map,
+            "raw_output": raw,
+            "error": None,
+        }
+    except Exception as e:
+        return {
+            "mac_map": {},
+            "raw_output": None,
+            "error": str(e),
+        }
+    finally:
+        client.close()
+
+
 def find_mac_on_switch_via_ssh(
     ip: str,
     username: str,

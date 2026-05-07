@@ -17,6 +17,7 @@
           v-if="nodes.length"
           class="topology-svg"
           :viewBox="`0 0 ${canvas.width} ${canvas.height}`"
+          :style="{ height: canvas.height + 'px' }"
           role="img"
         >
           <line
@@ -100,23 +101,48 @@ const links = ref([])
 const activeServerId = ref(null)
 const activeSwitchId = ref(null)
 
-const canvas = { width: 1120, height: 660 }
+const nodeRadius = 34
+const nodeSpacing = 120   // 纵向间距
+const canvasWidth = 1120
+
+const canvas = computed(() => {
+  const count = Math.max(nodes.value.length, 1)
+  const height = Math.max(680, count * nodeSpacing + 80)
+  return { width: canvasWidth, height }
+})
 
 const switchNodes = computed(() => nodes.value.filter(n => n.type === 'switch'))
 const serverNodes = computed(() => nodes.value.filter(n => n.type === 'server'))
 const foundEdges = computed(() => edges.value.filter(e => e.kind === 'discovered' && e.status === 'found'))
 const associationEdges = computed(() => edges.value.filter(e => e.kind === 'association'))
 
+/**
+ * 自适应布局：根据每个节点的 assoc_count + 连接数决定 Y 坐标
+ * 交换机列居左 (x=260)，服务器列居右 (x=820)
+ * 每列节点按顺序均匀分布，间距自适应
+ */
 const positionedNodes = computed(() => {
   const result = []
-  const switchGap = canvas.height / Math.max(switchNodes.value.length + 1, 2)
-  const serverGap = canvas.height / Math.max(serverNodes.value.length + 1, 2)
+  const swCount = switchNodes.value.length
+  const svCount = serverNodes.value.length
+  const h = canvas.value.height
+
+  const switchGap = swCount > 1 ? (h - 80) / (swCount - 1) : h / 2
+  const serverGap = svCount > 1 ? (h - 80) / (svCount - 1) : h / 2
 
   switchNodes.value.forEach((node, index) => {
-    result.push({ ...node, x: 260, y: Math.round(switchGap * (index + 1)) })
+    result.push({
+      ...node,
+      x: 260,
+      y: swCount > 1 ? Math.round(40 + switchGap * index) : Math.round(h / 2),
+    })
   })
   serverNodes.value.forEach((node, index) => {
-    result.push({ ...node, x: 820, y: Math.round(serverGap * (index + 1)) })
+    result.push({
+      ...node,
+      x: 820,
+      y: svCount > 1 ? Math.round(40 + serverGap * index) : Math.round(h / 2),
+    })
   })
   return result
 })
@@ -253,8 +279,11 @@ onMounted(loadTopology)
 
 .topology-svg {
   width: 100%;
-  height: 680px;
   display: block;
+}
+
+.topology-canvas {
+  overflow-x: auto;
 }
 
 .topology-edge {

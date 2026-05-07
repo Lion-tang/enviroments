@@ -13,7 +13,7 @@ from app.models.server import Server
 from app.models.switch import Switch
 from infrastructure.ssh_client import (
     fetch_up_server_interfaces_via_ssh,
-    find_mac_on_switch_via_ssh,
+    fetch_all_macs_from_switch_via_ssh,
     stimulate_mac_learning_via_ssh,
 )
 
@@ -91,7 +91,11 @@ def _upsert_link(
 
 @router.get("")
 def get_topology(db: Session = Depends(get_db)):
-    servers = db.query(Server).order_by(Server.ip).all()
+    # 只显示有关联交换机的服务器
+    servers = [
+        s for s in db.query(Server).order_by(Server.ip).all()
+        if s.switches
+    ]
     switches = db.query(Switch).order_by(Switch.name).all()
     associated_pairs = {
         (server.id, switch.id)
@@ -126,7 +130,7 @@ def get_topology(db: Session = Depends(get_db)):
             "online": server.is_online,
             "tags": server.tags,
             "occupied_by": server.occupied_by,
-            "assoc_count": len(server.switches) if server.switches else 0,
+            "assoc_count": len(switch.servers) if switch.servers else 0,
         })
 
     discovered = [
@@ -178,19 +182,11 @@ def discover_topology(payload: TopologyDiscoverRequest, db: Session = Depends(ge
         query = query.filter(Server.id.in_(payload.server_ids))
     servers = query.all()
 
-    results = []
+    # ── Step 1: 采集所有服务器的网口信息 ──
+    server_ifaces = []  # [{server, interfaces}]  only servers with switches
     for server in servers:
-        server_result = {
-            "server_id": server.id,
-            "server_ip": server.ip,
-            "interfaces": [],
-            "error": None,
-        }
         if not server.switches:
-            server_result["error"] = "未关联交换机"
-            results.append(server_result)
             continue
-
         interfaces, error = fetch_up_server_interfaces_via_ssh(
             ip=server.ip,
             username=server.ssh_username,
@@ -198,12 +194,17 @@ def discover_topology(payload: TopologyDiscoverRequest, db: Session = Depends(ge
             key_file=server.ssh_key_file,
             port=server.port,
         )
-        if error:
-            server_result["error"] = error
-            results.append(server_result)
-            continue
+        server_ifaces.append({
+            "server": server,
+            "interfaces": interfaces if not error else [],
+            "error": error,
+        })
 
-        for iface in interfaces:
+    # ── Step 2: 从每台服务器上 ping 所有接口，触发交换机学习 MAC ──
+    all_macs = {}  # { mac_lower: { "server": ..., "iface": ... } }
+    for entry in server_ifaces:
+        server = entry["server"]
+        for iface in entry["interfaces"]:
             ping_error = stimulate_mac_learning_via_ssh(
                 ip=server.ip,
                 username=server.ssh_username,
@@ -214,34 +215,86 @@ def discover_topology(payload: TopologyDiscoverRequest, db: Session = Depends(ge
                 iface_ip=iface["ip"],
                 prefixlen=iface.get("prefixlen"),
             )
+            iface["_ping_error"] = ping_error
+            mac = iface["mac"]
+            if mac not in all_macs:
+                all_macs[mac] = {"server": server, "iface": iface}
+
+    # ── Step 3: 按交换机分组，每台交换机只查一次全量 MAC 表 ──
+    # 收集所有涉及到的交换机（去重）
+    switch_ids = set()
+    for entry in server_ifaces:
+        for switch in entry["server"].switches:
+            switch_ids.add(switch.id)
+    involved_switches = db.query(Switch).filter(Switch.id.in_(switch_ids)).all()
+
+    switch_mac_maps = {}  # { switch_id: mac_map }
+    for switch in involved_switches:
+        result = fetch_all_macs_from_switch_via_ssh(
+            ip=switch.ip,
+            username=switch.username,
+            password=switch.password,
+            port=switch.port,
+        )
+        switch_mac_maps[switch.id] = result
+
+    # ── Step 4: 匹配并写入 DB ──
+    results = []
+    for entry in server_ifaces:
+        server = entry["server"]
+        server_result = {
+            "server_id": server.id,
+            "server_ip": server.ip,
+            "interfaces": [],
+            "error": entry.get("error"),
+        }
+        if entry.get("error"):
+            results.append(server_result)
+            continue
+
+        for iface in entry["interfaces"]:
             iface_result = {
                 "name": iface["name"],
                 "ip": iface["ip"],
                 "mac": iface["mac"],
-                "ping_error": ping_error,
+                "ping_error": iface.get("_ping_error"),
                 "switches": [],
             }
             for switch in server.switches:
-                found = find_mac_on_switch_via_ssh(
-                    ip=switch.ip,
-                    port=switch.port,
-                    username=switch.username,
-                    password=switch.password,
-                    mac=iface["mac"],
-                )
-                status = "found" if found.get("found") else "not_found"
-                if found.get("error"):
+                sw_result = switch_mac_maps.get(switch.id, {})
+                sw_error = sw_result.get("error")
+                mac_map = sw_result.get("mac_map", {})
+
+                found_entry = mac_map.get(iface["mac"])
+                if found_entry:
+                    status = "found"
+                    switch_interface = found_entry["interface"]
+                    vlan = found_entry["vlan"]
+                    raw_output = sw_result.get("raw_output")
+                    error = None
+                elif sw_error:
                     status = "error"
+                    switch_interface = None
+                    vlan = None
+                    raw_output = None
+                    error = sw_error
+                else:
+                    status = "not_found"
+                    switch_interface = None
+                    vlan = None
+                    raw_output = sw_result.get("raw_output")
+                    error = None
+
                 link = _upsert_link(
                     db=db,
                     server=server,
                     switch=switch,
                     iface=iface,
                     status=status,
-                    switch_interface=found.get("interface"),
-                    vlan=found.get("vlan"),
-                    raw_output=found.get("raw_output"),
-                    error=found.get("error"),
+                    switch_interface=switch_interface,
+                    vlan=vlan,
+                    raw_output=raw_output,
+                    error=error,
                 )
                 iface_result["switches"].append({
                     "switch_id": switch.id,
