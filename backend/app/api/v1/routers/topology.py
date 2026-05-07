@@ -212,8 +212,6 @@ def discover_topology(payload: TopologyDiscoverRequest, db: Session = Depends(ge
                 key_file=server.ssh_key_file,
                 port=server.port,
                 iface=iface["name"],
-                iface_ip=iface["ip"],
-                prefixlen=iface.get("prefixlen"),
             )
             iface["_ping_error"] = ping_error
             mac = iface["mac"]

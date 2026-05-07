@@ -389,7 +389,7 @@ def fetch_up_server_interfaces_via_ssh(
     key_file: Optional[str] = None,
     port: int = 22,
 ) -> tuple[list[dict], Optional[str]]:
-    """Return UP physical Linux interfaces with IPv4, MAC and prefix length."""
+    """Return UP physical Linux interfaces with MAC (IP optional)."""
     import paramiko
 
     client = paramiko.SSHClient()
@@ -416,13 +416,13 @@ def fetch_up_server_interfaces_via_ssh(
                 continue
             if item.get("operstate") != "UP":
                 continue
-            inet = next((a for a in item.get("addr_info", []) if a.get("family") == "inet"), None)
-            if not inet or not inet.get("local") or not mac:
+            if not mac:
                 continue
+            inet = next((a for a in item.get("addr_info", []) if a.get("family") == "inet"), None)
             interfaces.append({
                 "name": name,
-                "ip": inet.get("local"),
-                "prefixlen": inet.get("prefixlen"),
+                "ip": inet.get("local") if inet else None,
+                "prefixlen": inet.get("prefixlen") if inet else None,
                 "mac": mac.lower(),
                 "operstate": item.get("operstate"),
             })
@@ -437,29 +437,14 @@ def stimulate_mac_learning_via_ssh(
     ip: str,
     username: str,
     iface: str,
-    iface_ip: str,
-    prefixlen: Optional[int],
     password: Optional[str] = None,
     key_file: Optional[str] = None,
     port: int = 22,
 ) -> Optional[str]:
-    """Send a few packets from a specific interface so the switch learns its source MAC."""
-    import ipaddress
+    """Send an ARP probe (arping) from a specific interface so the switch learns its source MAC.
+    Uses a broadcast or the .1 gateway as target — no working IP config required.
+    """
     import paramiko
-
-    try:
-        network = ipaddress.ip_network(f"{iface_ip}/{prefixlen or 24}", strict=False)
-        target = None
-        for candidate in network.hosts():
-            candidate_s = str(candidate)
-            if candidate_s != iface_ip:
-                target = candidate_s
-                if candidate_s.rsplit(".", 1)[-1] == "1":
-                    break
-        if not target:
-            return "no ping target in subnet"
-    except Exception as e:
-        return f"invalid subnet: {e}"
 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -474,10 +459,13 @@ def stimulate_mac_learning_via_ssh(
             look_for_keys=False,
             allow_agent=False,
         )
+        # Try arping broadcast first (works even without IP on the interface)
+        # Fall back to regular ping via interface if arping not available
         _exec(
             client,
-            f"ping -I {iface} -c 3 -W 1 {target} >/dev/null 2>&1 || true",
-            timeout=8,
+            f"arping -I {iface} -c 1 -w 2 255.255.255.255 >/dev/null 2>&1 || "
+            f"arping -I {iface} -c 1 -w 2 0.0.0.0 >/dev/null 2>&1 || true",
+            timeout=6,
         )
         return None
     except Exception as e:
