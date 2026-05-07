@@ -9,59 +9,58 @@
       </el-button>
       <el-tag type="success">端口链路 {{ foundEdges.length }}</el-tag>
       <el-tag type="info">关联线 {{ associationEdges.length }}</el-tag>
-      <el-tag v-if="dragNodeId" type="warning">拖拽中...</el-tag>
     </div>
 
     <div class="topology-layout">
-      <section class="topology-canvas" v-loading="loading || discovering">
-        <svg
-          v-if="nodes.length"
-          class="topology-svg"
-          :viewBox="`0 0 ${canvas.width} ${canvas.height}`"
-          :style="{ height: canvas.height + 'px' }"
-          @mousemove="onMouseMove"
-          @mouseup="onMouseUp"
-          @mouseleave="onMouseUp"
-        >
-          <!-- 连线 -->
-          <line
-            v-for="edge in positionedEdges"
-            :key="edge.id"
-            :x1="edge.source.x"
-            :y1="edge.source.y"
-            :x2="edge.target.x"
-            :y2="edge.target.y"
-            :class="['topology-edge', edge.kind, edge.status]"
-          />
-          <!-- 连线标签 -->
-          <g
-            v-for="edge in positionedEdges"
-            :key="`${edge.id}-label`"
-            class="edge-label"
-            :transform="`translate(${edge.labelX}, ${edge.labelY})`"
-          >
-            <rect x="-70" y="-14" width="140" height="28" rx="6" />
-            <text text-anchor="middle" dominant-baseline="middle">
-              {{ edgeLabel(edge) }}
-            </text>
-          </g>
-          <!-- 节点（可拖拽） -->
-          <g
-            v-for="node in positionedNodes"
-            :key="node.id"
-            class="topology-node"
-            :class="[node.type, { offline: node.online === false, dragging: dragNodeId === node.id }]"
-            :transform="`translate(${node.x}, ${node.y})`"
-            @mousedown.prevent="onNodeDragStart(node.id, $event)"
-            @click.stop="openNode(node)"
-          >
-            <circle r="34" />
-            <text class="node-icon" text-anchor="middle" y="-3">{{ node.type === 'switch' ? 'SW' : 'SRV' }}</text>
-            <text class="node-ip-label" text-anchor="middle" y="52">{{ node.ip }}</text>
-            <text class="node-label-tiny" text-anchor="middle" y="70">{{ node.label }}</text>
-          </g>
-        </svg>
-        <el-empty v-else description="暂无拓扑数据" />
+      <section
+        class="topology-canvas"
+        v-loading="loading || discovering"
+        @mousedown="onCanvasMouseDown"
+        @mousemove="onCanvasMouseMove"
+        @mouseup="onCanvasMouseUp"
+        @mouseleave="onCanvasMouseUp"
+      >
+        <div class="canvas-viewport" :style="{ width: canvasWidth + 'px', height: canvas.height + 'px' }">
+          <svg class="topology-svg" :viewBox="viewBox">
+            <!-- 连线 -->
+            <line
+              v-for="edge in positionedEdges"
+              :key="edge.id"
+              :x1="edge.source.x"
+              :y1="edge.source.y"
+              :x2="edge.target.x"
+              :y2="edge.target.y"
+              :class="['topology-edge', edge.kind, edge.status]"
+            />
+            <!-- 连线标签 -->
+            <g
+              v-for="edge in positionedEdges"
+              :key="`${edge.id}-label`"
+              class="edge-label"
+              :transform="`translate(${edge.labelX}, ${edge.labelY})`"
+            >
+              <rect x="-70" y="-14" width="140" height="28" rx="6" />
+              <text text-anchor="middle" dominant-baseline="middle">
+                {{ edgeLabel(edge) }}
+              </text>
+            </g>
+            <!-- 节点 -->
+            <g
+              v-for="node in positionedNodes"
+              :key="node.id"
+              class="topology-node"
+              :class="[node.type, { offline: node.online === false }]"
+              :transform="`translate(${node.x}, ${node.y})`"
+              @click.stop="openNode(node)"
+            >
+              <circle r="34" />
+              <text class="node-icon" text-anchor="middle" y="-3">{{ node.type === 'switch' ? 'SW' : 'SRV' }}</text>
+              <text class="node-ip-label" text-anchor="middle" y="52">{{ node.ip }}</text>
+              <text class="node-label-tiny" text-anchor="middle" y="70">{{ node.label }}</text>
+            </g>
+          </svg>
+        </div>
+        <el-empty v-if="!nodes.length" description="暂无拓扑数据" />
       </section>
 
       <aside class="link-panel">
@@ -91,7 +90,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Connection, Refresh } from '@element-plus/icons-vue'
 import { topology as topologyApi } from '../api/index.js'
@@ -108,12 +107,15 @@ const links = ref([])
 const activeServerId = ref(null)
 const activeSwitchId = ref(null)
 
-// 拖拽状态
-const dragNodeId = ref(null)
-const dragOffset = { x: 0, y: 0 }
-const nodePositions = reactive({})  // { nodeId: { x, y } }
+// 画布平移
+const panX = ref(0)
+const panY = ref(0)
+const isPanning = ref(false)
+const panStart = { x: 0, y: 0 }
+const panStartOffset = { x: 0, y: 0 }
 
 const canvasWidth = 1120
+const canvasHeight = 660
 
 const canvas = computed(() => {
   const count = Math.max(nodes.value.length, 1)
@@ -121,15 +123,18 @@ const canvas = computed(() => {
   return { width: canvasWidth, height }
 })
 
+const viewBox = computed(() => {
+  const w = canvas.value.width
+  const h = canvas.value.height
+  return `${panX.value} ${panY.value} ${w} ${h}`
+})
+
 const switchNodes = computed(() => nodes.value.filter(n => n.type === 'switch'))
 const serverNodes = computed(() => nodes.value.filter(n => n.type === 'server'))
 const foundEdges = computed(() => edges.value.filter(e => e.kind === 'discovered' && e.status === 'found'))
 const associationEdges = computed(() => edges.value.filter(e => e.kind === 'association'))
 
-/**
- * 初始布局：左列交换机，右列服务器，自适应间距
- */
-function computeInitialPositions() {
+const positionedNodes = computed(() => {
   const result = []
   const sw = switchNodes.value
   const sv = serverNodes.value
@@ -153,20 +158,6 @@ function computeInitialPositions() {
     })
   })
   return result
-}
-
-/**
- * 根据 nodePositions（含拖拽偏移）+ 未拖拽过的节点自动取初始布局
- */
-const positionedNodes = computed(() => {
-  const initial = computeInitialPositions()
-  return initial.map(node => {
-    const pos = nodePositions[node.id]
-    if (pos) {
-      return { ...node, x: pos.x, y: pos.y }
-    }
-    return node
-  })
 })
 
 const nodeMap = computed(() => {
@@ -227,32 +218,23 @@ function openNode(node) {
   if (node.type === 'switch') activeSwitchId.value = node.entity_id
 }
 
-// ── 拖拽逻辑 ──
-function onNodeDragStart(nodeId, event) {
-  // 阻止点击穿透导致打开详情
-  event.stopPropagation()
-  dragNodeId.value = nodeId
-  const pos = nodePositions[nodeId] || {}
-  const nodeEl = positionedNodes.value.find(n => n.id === nodeId)
-  if (nodeEl) {
-    dragOffset.x = event.offsetX - (nodeEl.x - (pos.x || 0))
-    dragOffset.y = event.offsetY - (nodeEl.y - (pos.y || 0))
-  }
+// ── 画布拖拽平移 ──
+function onCanvasMouseDown(event) {
+  isPanning.value = true
+  panStart.x = event.clientX
+  panStart.y = event.clientY
+  panStartOffset.x = panX.value
+  panStartOffset.y = panY.value
 }
 
-function onMouseMove(event) {
-  if (!dragNodeId.value) return
-  const svg = event.currentTarget
-  const rect = svg.getBoundingClientRect()
-  const scaleX = canvas.value.width / rect.width
-  const scaleY = canvas.value.height / rect.height
-  const svgX = Math.round((event.clientX - rect.left) * scaleX - dragOffset.x)
-  const svgY = Math.round((event.clientY - rect.top) * scaleY - dragOffset.y)
-  nodePositions[dragNodeId.value] = { x: svgX, y: svgY }
+function onCanvasMouseMove(event) {
+  if (!isPanning.value) return
+  panX.value = panStartOffset.x + (panStart.x - event.clientX)
+  panY.value = panStartOffset.y + (panStart.y - event.clientY)
 }
 
-function onMouseUp() {
-  dragNodeId.value = null
+function onCanvasMouseUp() {
+  isPanning.value = false
 }
 
 function publishStats() {
@@ -264,13 +246,13 @@ function publishStats() {
 
 async function loadTopology() {
   loading.value = true
+  panX.value = 0
+  panY.value = 0
   try {
     const data = await topologyApi.get()
     nodes.value = data.nodes || []
     edges.value = data.edges || []
     links.value = data.links || []
-    // 重置拖拽位置（拓扑变了，旧位置不适用）
-    Object.keys(nodePositions).forEach(k => delete nodePositions[k])
     publishStats()
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '加载拓扑失败')
@@ -327,12 +309,22 @@ onMounted(loadTopology)
 .topology-canvas {
   min-height: 680px;
   overflow: hidden;
+  position: relative;
+  cursor: grab;
+}
+
+.topology-canvas:active {
+  cursor: grabbing;
+}
+
+.canvas-viewport {
+  overflow: hidden;
 }
 
 .topology-svg {
   width: 100%;
+  height: 100%;
   display: block;
-  overflow-x: auto;
   user-select: none;
 }
 
@@ -368,17 +360,7 @@ onMounted(loadTopology)
 }
 
 .topology-node {
-  cursor: grab;
-  transition: none;
-}
-
-.topology-node:active {
-  cursor: grabbing;
-}
-
-.topology-node.dragging circle {
-  stroke-width: 4;
-  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));
+  cursor: pointer;
 }
 
 .topology-node circle {
