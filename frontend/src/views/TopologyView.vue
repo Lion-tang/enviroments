@@ -60,9 +60,7 @@
               @click.stop="openNode(node)"
             >
               <circle r="34" />
-              <text class="node-icon" text-anchor="middle" y="-3">{{ node.type === 'switch' ? 'SW' : 'SRV' }}</text>
-              <text class="node-ip-label" text-anchor="middle" y="52">{{ node.ip }}</text>
-              <text class="node-label-tiny" text-anchor="middle" y="70">{{ node.label }}</text>
+              <text class="node-ip-in-circle" text-anchor="middle" dominant-baseline="central">{{ node.ip }}</text>
             </g>
           </svg>
         </div>
@@ -422,21 +420,10 @@ onMounted(loadTopology)
   opacity: 0.75;
 }
 
-.node-icon {
+.node-ip-in-circle {
   fill: var(--text-primary);
-  font-weight: 700;
-  font-size: 13px;
-}
-
-.node-ip-label {
-  fill: var(--text-primary);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.node-label-tiny {
-  fill: var(--text-muted);
   font-size: 11px;
+  font-weight: 700;
 }
 
 .link-panel {
