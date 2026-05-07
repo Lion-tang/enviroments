@@ -536,7 +536,7 @@ def _parse_mac_address_output(raw: str, mac: str) -> dict:
     return {"found": True, "interface": iface, "vlan": vlan, "line": line}
 
 
-def _parse_mac_table_line(line: str) -> dict | None:
+def _parse_mac_table_line(line: str) -> Optional[dict]:
     """
     Parse a single line from 'display mac-address' output.
     Returns {mac, interface, vlan} or None if the line doesn't contain a valid MAC entry.
