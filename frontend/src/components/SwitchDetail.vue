@@ -11,6 +11,7 @@
             <el-descriptions-item label="IP">{{ detail.ip }}</el-descriptions-item>
             <el-descriptions-item label="端口">{{ detail.port }}</el-descriptions-item>
             <el-descriptions-item label="用户名">{{ detail.username }}</el-descriptions-item>
+            <el-descriptions-item label="密码">{{ detail.password || '—' }}</el-descriptions-item>
             <el-descriptions-item label="系统类型">{{ detail.os_type || '—' }}</el-descriptions-item>
             <el-descriptions-item label="系统版本">{{ detail.os_version || '—' }}</el-descriptions-item>
             <el-descriptions-item label="补丁版本">{{ detail.patch_version || '—' }}</el-descriptions-item>
