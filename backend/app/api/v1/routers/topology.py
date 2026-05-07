@@ -25,12 +25,6 @@ class TopologyDiscoverRequest(BaseModel):
 
 
 def _server_label(server: Server) -> str:
-    if server.cached_info:
-        try:
-            cached = json.loads(server.cached_info)
-            return cached.get("hostname") or server.ip
-        except Exception:
-            pass
     return server.ip
 
 
@@ -125,7 +119,7 @@ def get_topology(db: Session = Depends(get_db)):
             "id": f"server-{server.id}",
             "type": "server",
             "entity_id": server.id,
-            "label": _server_label(server),
+            "label": server.ip,
             "ip": server.ip,
             "online": server.is_online,
             "tags": server.tags,

@@ -9,6 +9,7 @@
       </el-button>
       <el-tag type="success">端口链路 {{ foundEdges.length }}</el-tag>
       <el-tag type="info">关联线 {{ associationEdges.length }}</el-tag>
+      <el-tag v-if="dragNodeId" type="warning">拖拽中...</el-tag>
     </div>
 
     <div class="topology-layout">
@@ -18,8 +19,11 @@
           class="topology-svg"
           :viewBox="`0 0 ${canvas.width} ${canvas.height}`"
           :style="{ height: canvas.height + 'px' }"
-          role="img"
+          @mousemove="onMouseMove"
+          @mouseup="onMouseUp"
+          @mouseleave="onMouseUp"
         >
+          <!-- 连线 -->
           <line
             v-for="edge in positionedEdges"
             :key="edge.id"
@@ -29,6 +33,7 @@
             :y2="edge.target.y"
             :class="['topology-edge', edge.kind, edge.status]"
           />
+          <!-- 连线标签 -->
           <g
             v-for="edge in positionedEdges"
             :key="`${edge.id}-label`"
@@ -40,18 +45,20 @@
               {{ edgeLabel(edge) }}
             </text>
           </g>
+          <!-- 节点（可拖拽） -->
           <g
             v-for="node in positionedNodes"
             :key="node.id"
             class="topology-node"
-            :class="[node.type, { offline: node.online === false }]"
+            :class="[node.type, { offline: node.online === false, dragging: dragNodeId === node.id }]"
             :transform="`translate(${node.x}, ${node.y})`"
-            @click="openNode(node)"
+            @mousedown.prevent="onNodeDragStart(node.id, $event)"
+            @click.stop="openNode(node)"
           >
             <circle r="34" />
             <text class="node-icon" text-anchor="middle" y="-3">{{ node.type === 'switch' ? 'SW' : 'SRV' }}</text>
-            <text class="node-label" text-anchor="middle" y="54">{{ node.label }}</text>
-            <text class="node-ip" text-anchor="middle" y="72">{{ node.ip }}</text>
+            <text class="node-ip-label" text-anchor="middle" y="52">{{ node.ip }}</text>
+            <text class="node-label-tiny" text-anchor="middle" y="70">{{ node.label }}</text>
           </g>
         </svg>
         <el-empty v-else description="暂无拓扑数据" />
@@ -84,7 +91,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Connection, Refresh } from '@element-plus/icons-vue'
 import { topology as topologyApi } from '../api/index.js'
@@ -101,13 +108,16 @@ const links = ref([])
 const activeServerId = ref(null)
 const activeSwitchId = ref(null)
 
-const nodeRadius = 34
-const nodeSpacing = 120   // 纵向间距
+// 拖拽状态
+const dragNodeId = ref(null)
+const dragOffset = { x: 0, y: 0 }
+const nodePositions = reactive({})  // { nodeId: { x, y } }
+
 const canvasWidth = 1120
 
 const canvas = computed(() => {
   const count = Math.max(nodes.value.length, 1)
-  const height = Math.max(680, count * nodeSpacing + 80)
+  const height = Math.max(680, count * 120 + 80)
   return { width: canvasWidth, height }
 })
 
@@ -117,34 +127,46 @@ const foundEdges = computed(() => edges.value.filter(e => e.kind === 'discovered
 const associationEdges = computed(() => edges.value.filter(e => e.kind === 'association'))
 
 /**
- * 自适应布局：根据每个节点的 assoc_count + 连接数决定 Y 坐标
- * 交换机列居左 (x=260)，服务器列居右 (x=820)
- * 每列节点按顺序均匀分布，间距自适应
+ * 初始布局：左列交换机，右列服务器，自适应间距
  */
-const positionedNodes = computed(() => {
+function computeInitialPositions() {
   const result = []
-  const swCount = switchNodes.value.length
-  const svCount = serverNodes.value.length
+  const sw = switchNodes.value
+  const sv = serverNodes.value
   const h = canvas.value.height
 
-  const switchGap = swCount > 1 ? (h - 80) / (swCount - 1) : h / 2
-  const serverGap = svCount > 1 ? (h - 80) / (svCount - 1) : h / 2
+  const swGap = sw.length > 1 ? (h - 80) / (sw.length - 1) : h / 2
+  const svGap = sv.length > 1 ? (h - 80) / (sv.length - 1) : h / 2
 
-  switchNodes.value.forEach((node, index) => {
+  sw.forEach((node, i) => {
     result.push({
       ...node,
       x: 260,
-      y: swCount > 1 ? Math.round(40 + switchGap * index) : Math.round(h / 2),
+      y: sw.length > 1 ? Math.round(40 + swGap * i) : Math.round(h / 2),
     })
   })
-  serverNodes.value.forEach((node, index) => {
+  sv.forEach((node, i) => {
     result.push({
       ...node,
       x: 820,
-      y: svCount > 1 ? Math.round(40 + serverGap * index) : Math.round(h / 2),
+      y: sv.length > 1 ? Math.round(40 + svGap * i) : Math.round(h / 2),
     })
   })
   return result
+}
+
+/**
+ * 根据 nodePositions（含拖拽偏移）+ 未拖拽过的节点自动取初始布局
+ */
+const positionedNodes = computed(() => {
+  const initial = computeInitialPositions()
+  return initial.map(node => {
+    const pos = nodePositions[node.id]
+    if (pos) {
+      return { ...node, x: pos.x, y: pos.y }
+    }
+    return node
+  })
 })
 
 const nodeMap = computed(() => {
@@ -173,7 +195,7 @@ const entityNames = computed(() => {
   const servers = new Map()
   const switches = new Map()
   nodes.value.forEach(node => {
-    if (node.type === 'server') servers.set(node.entity_id, node.label || node.ip)
+    if (node.type === 'server') servers.set(node.entity_id, node.ip)
     if (node.type === 'switch') switches.set(node.entity_id, node.label || node.ip)
   })
   return { servers, switches }
@@ -187,7 +209,7 @@ function edgeLabel(edge) {
 }
 
 function statusText(status) {
-  if (status === 'found') return '已发现'
+  if (status === 'found') return '已链接'
   if (status === 'error') return '失败'
   return '未找到'
 }
@@ -205,6 +227,34 @@ function openNode(node) {
   if (node.type === 'switch') activeSwitchId.value = node.entity_id
 }
 
+// ── 拖拽逻辑 ──
+function onNodeDragStart(nodeId, event) {
+  // 阻止点击穿透导致打开详情
+  event.stopPropagation()
+  dragNodeId.value = nodeId
+  const pos = nodePositions[nodeId] || {}
+  const nodeEl = positionedNodes.value.find(n => n.id === nodeId)
+  if (nodeEl) {
+    dragOffset.x = event.offsetX - (nodeEl.x - (pos.x || 0))
+    dragOffset.y = event.offsetY - (nodeEl.y - (pos.y || 0))
+  }
+}
+
+function onMouseMove(event) {
+  if (!dragNodeId.value) return
+  const svg = event.currentTarget
+  const rect = svg.getBoundingClientRect()
+  const scaleX = canvas.value.width / rect.width
+  const scaleY = canvas.value.height / rect.height
+  const svgX = Math.round((event.clientX - rect.left) * scaleX - dragOffset.x)
+  const svgY = Math.round((event.clientY - rect.top) * scaleY - dragOffset.y)
+  nodePositions[dragNodeId.value] = { x: svgX, y: svgY }
+}
+
+function onMouseUp() {
+  dragNodeId.value = null
+}
+
 function publishStats() {
   emit('stats', {
     found: foundEdges.value.length,
@@ -219,6 +269,8 @@ async function loadTopology() {
     nodes.value = data.nodes || []
     edges.value = data.edges || []
     links.value = data.links || []
+    // 重置拖拽位置（拓扑变了，旧位置不适用）
+    Object.keys(nodePositions).forEach(k => delete nodePositions[k])
     publishStats()
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '加载拓扑失败')
@@ -280,10 +332,8 @@ onMounted(loadTopology)
 .topology-svg {
   width: 100%;
   display: block;
-}
-
-.topology-canvas {
   overflow-x: auto;
+  user-select: none;
 }
 
 .topology-edge {
@@ -318,7 +368,17 @@ onMounted(loadTopology)
 }
 
 .topology-node {
-  cursor: pointer;
+  cursor: grab;
+  transition: none;
+}
+
+.topology-node:active {
+  cursor: grabbing;
+}
+
+.topology-node.dragging circle {
+  stroke-width: 4;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));
 }
 
 .topology-node circle {
@@ -342,15 +402,15 @@ onMounted(loadTopology)
   font-size: 13px;
 }
 
-.node-label {
+.node-ip-label {
   fill: var(--text-primary);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
-.node-ip {
+.node-label-tiny {
   fill: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .link-panel {
