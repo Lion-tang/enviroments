@@ -29,8 +29,8 @@
         @mouseup="onCanvasMouseUp"
         @mouseleave="onCanvasMouseUp"
       >
-        <div class="canvas-viewport" :style="{ width: canvasWidth + 'px', height: canvas.height + 'px' }">
-          <svg class="topology-svg" :viewBox="viewBox">
+        <div class="canvas-viewport">
+          <svg class="topology-svg" :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
             <!-- 连线 -->
             <path
               v-for="edge in positionedEdges"
@@ -194,7 +194,7 @@ const positionedEdges = computed(() => {
       const key = `${edge.source}|${edge.target}`
       const total = pairCount[key] || 1
       const idx = pairIndex[key]--   // 从大到小
-      const offset = total > 1 ? (idx - (total + 1) / 2) * 18 : 0
+      const offset = total > 1 ? (idx - (total + 1) / 2) * 28 : 0
 
       const mx = (source.x + target.x) / 2
       const my = (source.y + target.y) / 2
@@ -205,7 +205,8 @@ const positionedEdges = computed(() => {
       const ux = len > 0 ? -dy / len : 0
       const uy = len > 0 ? dx / len : 0
 
-      // 两端偏移
+      // 只保留 found 和 association，不显示 not_found
+      if (edge.status === 'not_found') return null
       const sx = source.x + ux * offset
       const sy = source.y + uy * offset
       const tx = target.x + ux * offset
@@ -353,6 +354,8 @@ onMounted(loadTopology)
   overflow: hidden;
   position: relative;
   cursor: grab;
+  display: flex;
+  align-items: stretch;
 }
 
 .topology-canvas:active {
@@ -361,6 +364,9 @@ onMounted(loadTopology)
 
 .canvas-viewport {
   overflow: hidden;
+  width: 100%;
+  height: 100%;
+  display: flex;
 }
 
 .topology-svg {
