@@ -9,6 +9,15 @@
       </el-button>
       <el-tag type="success">端口链路 {{ foundEdges.length }}</el-tag>
       <el-tag type="info">关联线 {{ associationEdges.length }}</el-tag>
+      <el-divider direction="vertical" />
+      <span class="legend">
+        <svg width="40" height="14" class="legend-svg"><line x1="0" y1="7" x2="40" y2="7" stroke="var(--online)" stroke-width="3" /></svg>
+        已链接
+        <svg width="40" height="14" class="legend-svg legend-dash"><line x1="0" y1="7" x2="40" y2="7" stroke="var(--warning)" stroke-width="2" stroke-dasharray="8 8" /></svg>
+        未学习到
+        <svg width="40" height="14" class="legend-svg"><line x1="0" y1="7" x2="40" y2="7" stroke="var(--text-muted)" stroke-width="2" stroke-dasharray="6 8" /></svg>
+        仅关联
+      </span>
     </div>
 
     <div class="topology-layout">
@@ -488,6 +497,24 @@ onMounted(loadTopology)
 
 .link-row small {
   color: var(--text-muted);
+}
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.legend .legend-svg {
+  vertical-align: middle;
+  margin: 0 2px 0 6px;
+}
+
+.legend .legend-svg:first-of-type {
+  margin-left: 0;
 }
 
 @media (max-width: 1000px) {
