@@ -59,6 +59,13 @@ def _exec(ssh_client, cmd: str, timeout: int = 10) -> str:
     return stdout.read().decode().strip()
 
 
+def _is_physical_interface(iface: str) -> bool:
+    return not (
+        iface in ("lo",)
+        or iface.startswith(("br-", "docker", "veth", "virbr", "tun", "tap"))
+    )
+
+
 def _pci_of_interface(ssh_client, iface: str) -> dict:
     """Get PCI address, description and speed for a network interface."""
     # Skip loopback and virtual interfaces
@@ -176,6 +183,11 @@ def fetch_server_info_linux(ssh_client) -> dict:
                         "name": iface_name,
                         "ip": inet_addr,
                         "mac": i.get("address"),
+                        "operstate": i.get("operstate"),
+                        "prefixlen": next(
+                            (a.get("prefixlen") for a in i.get("addr_info", []) if a.get("family") == "inet"),
+                            None
+                        ),
                         "pci_addr": pci["pci_addr"],
                         "pci_desc": pci["pci_desc"],
                         "speed": pci["speed"],
@@ -370,6 +382,213 @@ def _interact_exec(ssh_client, command: str, expect_prompt: str = ">", timeout: 
     return output
 
 
+def fetch_up_server_interfaces_via_ssh(
+    ip: str,
+    username: str,
+    password: Optional[str] = None,
+    key_file: Optional[str] = None,
+    port: int = 22,
+) -> tuple[list[dict], Optional[str]]:
+    """Return UP physical Linux interfaces with IPv4, MAC and prefix length."""
+    import paramiko
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    try:
+        client.connect(
+            ip,
+            port=port,
+            username=username,
+            password=password,
+            key_filename=key_file,
+            timeout=10,
+            look_for_keys=False,
+            allow_agent=False,
+        )
+        raw = _exec(client, "ip -j addr show 2>/dev/null", timeout=10)
+        data = json.loads(raw or "[]")
+        interfaces = []
+        for item in data:
+            name = item.get("ifname") or ""
+            mac = item.get("address") or ""
+            if not _is_physical_interface(name):
+                continue
+            if item.get("operstate") != "UP":
+                continue
+            inet = next((a for a in item.get("addr_info", []) if a.get("family") == "inet"), None)
+            if not inet or not inet.get("local") or not mac:
+                continue
+            interfaces.append({
+                "name": name,
+                "ip": inet.get("local"),
+                "prefixlen": inet.get("prefixlen"),
+                "mac": mac.lower(),
+                "operstate": item.get("operstate"),
+            })
+        return interfaces, None
+    except Exception as e:
+        return [], str(e)
+    finally:
+        client.close()
+
+
+def stimulate_mac_learning_via_ssh(
+    ip: str,
+    username: str,
+    iface: str,
+    iface_ip: str,
+    prefixlen: Optional[int],
+    password: Optional[str] = None,
+    key_file: Optional[str] = None,
+    port: int = 22,
+) -> Optional[str]:
+    """Send a few packets from a specific interface so the switch learns its source MAC."""
+    import ipaddress
+    import paramiko
+
+    try:
+        network = ipaddress.ip_network(f"{iface_ip}/{prefixlen or 24}", strict=False)
+        target = None
+        for candidate in network.hosts():
+            candidate_s = str(candidate)
+            if candidate_s != iface_ip:
+                target = candidate_s
+                if candidate_s.rsplit(".", 1)[-1] == "1":
+                    break
+        if not target:
+            return "no ping target in subnet"
+    except Exception as e:
+        return f"invalid subnet: {e}"
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            ip,
+            port=port,
+            username=username,
+            password=password,
+            key_filename=key_file,
+            timeout=10,
+            look_for_keys=False,
+            allow_agent=False,
+        )
+        _exec(
+            client,
+            f"ping -I {iface} -c 3 -W 1 {target} >/dev/null 2>&1 || true",
+            timeout=8,
+        )
+        return None
+    except Exception as e:
+        return str(e)
+    finally:
+        client.close()
+
+
+def _mac_formats(mac: str) -> list[str]:
+    compact = "".join(c for c in mac.lower() if c in "0123456789abcdef")
+    if len(compact) != 12:
+        return [mac.lower()]
+    return [
+        compact,
+        ":".join(compact[i:i + 2] for i in range(0, 12, 2)),
+        "-".join(compact[i:i + 2] for i in range(0, 12, 2)),
+        f"{compact[0:4]}-{compact[4:8]}-{compact[8:12]}",
+        f"{compact[0:4]}.{compact[4:8]}.{compact[8:12]}",
+    ]
+
+
+def _parse_mac_address_output(raw: str, mac: str) -> dict:
+    import re
+
+    compact = "".join(c for c in mac.lower() if c in "0123456789abcdef")
+    candidates = []
+    for line in raw.splitlines():
+        line_s = line.strip()
+        if not line_s or "display mac-address" in line_s.lower():
+            continue
+        normalized_line = "".join(c for c in line.lower() if c in "0123456789abcdef")
+        if compact and compact not in normalized_line:
+            continue
+        candidates.append(line_s)
+
+    if not candidates:
+        return {"found": False, "interface": None, "vlan": None}
+
+    line = candidates[0]
+    vlan = None
+    vlan_match = re.search(r"(?<![/\w-])(\d{1,4})(?![/\w-])", line)
+    if vlan_match:
+        vlan = vlan_match.group(1)
+
+    iface = None
+    iface_patterns = [
+        r"(?:X?GigabitEthernet|Ten-GigabitEthernet|FortyGigE|HundredGigE|Ethernet|GE|XGE|Eth-Trunk|Bridge-Aggregation)[\w/.-]+",
+        r"\b(?:Eth|Gi|Te|Twe|Fo|Hu)\d+(?:/\d+)+(?:\.\d+)?\b",
+    ]
+    for pattern in iface_patterns:
+        match = re.search(pattern, line, re.IGNORECASE)
+        if match:
+            iface = match.group(0)
+            break
+
+    return {"found": True, "interface": iface, "vlan": vlan, "line": line}
+
+
+def find_mac_on_switch_via_ssh(
+    ip: str,
+    username: str,
+    mac: str,
+    password: Optional[str] = None,
+    port: int = 22,
+) -> dict:
+    """Query H3C/Huawei-style MAC address table and parse the learned interface."""
+    import paramiko
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            ip,
+            port=port,
+            username=username,
+            password=password,
+            timeout=10,
+            look_for_keys=False,
+            allow_agent=False,
+        )
+        outputs = []
+        try:
+            _interact_exec(client, "screen-length 0 temporary", timeout=5)
+        except Exception:
+            pass
+        for mac_format in _mac_formats(mac):
+            raw = _interact_exec(client, f"display mac-address | include {mac_format}", timeout=12)
+            outputs.append(raw)
+            parsed = _parse_mac_address_output(raw, mac_format)
+            if parsed.get("found"):
+                parsed["raw_output"] = raw
+                parsed["queried_mac"] = mac_format
+                return parsed
+        return {
+            "found": False,
+            "interface": None,
+            "vlan": None,
+            "raw_output": "\n".join(outputs),
+        }
+    except Exception as e:
+        return {
+            "found": False,
+            "interface": None,
+            "vlan": None,
+            "raw_output": None,
+            "error": str(e),
+        }
+    finally:
+        client.close()
+
+
 def _parse_display_version(raw: str) -> dict:
     """
     Parse 'display version' output from H3C / Huawei / Cisco CLI.
@@ -500,4 +719,3 @@ def get_switch_info_via_ssh(
 
     finally:
         client.close()
-

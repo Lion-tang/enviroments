@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import FileResponse
 from app.core.database import init_db
-from app.api.v1.routers import servers, files, switches, terminal
+from app.api.v1.routers import servers, files, switches, terminal, topology
 from app.api.v1.routers import logs as logs_router
 from app.api.v1.routers.logs import switch_logs_router
 from app.api.v1.routers import auth
@@ -53,6 +53,7 @@ app.include_router(switches.router, prefix="/api/v1")
 app.include_router(switch_logs_router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(terminal.router, prefix="/api/v1")
+app.include_router(topology.router, prefix="/api/v1")
 
 @app.get("/")
 def root():

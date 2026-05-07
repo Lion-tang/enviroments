@@ -29,6 +29,7 @@ def init_db():
     from app.models.switch import Switch
     from app.models.user import User
     from app.models.server_favorite import ServerFavorite
+    from app.models.network_link import NetworkLink
     Base.metadata.create_all(bind=engine)
     ensure_schema()
 

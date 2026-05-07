@@ -49,6 +49,16 @@
           <span class="nav-icon">⭐</span>
           <span v-if="!sidebarCollapsed">我的收藏</span>
         </button>
+
+        <button
+          class="nav-item"
+          :class="{ active: activeTab === 'topology' }"
+          @click="activeTab = 'topology'"
+          :title="sidebarCollapsed ? '组网图' : ''"
+        >
+          <span class="nav-icon">⌘</span>
+          <span v-if="!sidebarCollapsed">组网图</span>
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -76,13 +86,13 @@
         <div class="stats-row">
           <div class="stat-chip stat-online">
             <span class="stat-dot"></span>
-            <span>在线</span>
-            <strong>{{ activeTab === 'servers' ? serverOnlineCount : switchOnlineCount }}</strong>
+            <span>{{ activeTab === 'topology' ? '已发现' : '在线' }}</span>
+            <strong>{{ activeTab === 'topology' ? topologyFoundCount : (activeTab === 'servers' ? serverOnlineCount : switchOnlineCount) }}</strong>
           </div>
           <div class="stat-chip stat-offline">
             <span class="stat-dot"></span>
-            <span>离线</span>
-            <strong>{{ activeTab === 'servers' ? serverOfflineCount : switchOfflineCount }}</strong>
+            <span>{{ activeTab === 'topology' ? '待确认' : '离线' }}</span>
+            <strong>{{ activeTab === 'topology' ? topologyPendingCount : (activeTab === 'servers' ? serverOfflineCount : switchOfflineCount) }}</strong>
           </div>
           <button class="theme-toggle" @click="toggleTheme" :title="isDark ? '切换亮色主题' : '切换暗色主题'">
             {{ isDark ? '☀️' : '🌙' }}
@@ -105,6 +115,10 @@
             v-else-if="activeTab === 'switches'"
             @stats="onSwitchStats"
           />
+          <TopologyView
+            v-else-if="activeTab === 'topology'"
+            @stats="onTopologyStats"
+          />
         </div>
       </main>
     </div>
@@ -118,6 +132,7 @@ import ServerList from './views/ServerList.vue'
 import ServerFavorites from './views/ServerFavorites.vue'
 import SwitchList from './views/SwitchList.vue'
 import StandaloneSSH from './views/StandaloneSSH.vue'
+import TopologyView from './views/TopologyView.vue'
 
 const activeTab = ref('servers')
 const username = ref(localStorage.getItem('username') || '')
@@ -132,11 +147,14 @@ const switchOnlineCount = ref(0)
 const switchOfflineCount = ref(0)
 const favoriteTotal = ref(0)
 const favoriteOnlineCount = ref(0)
+const topologyFoundCount = ref(0)
+const topologyPendingCount = ref(0)
 
 const tabTitle = computed(() => {
   if (activeTab.value === 'servers') return '服务器列表'
   if (activeTab.value === 'switches') return '交换机列表'
   if (activeTab.value === 'favorites') return '我的收藏'
+  if (activeTab.value === 'topology') return '组网图'
   return 'Enviroments'
 })
 
@@ -144,6 +162,7 @@ const tabSubtitle = computed(() => {
   if (activeTab.value === 'servers') return `共 ${serverTotal.value} 台`
   if (activeTab.value === 'switches') return `共 ${switchTotal.value} 台`
   if (activeTab.value === 'favorites') return `共 ${favoriteTotal.value} 台收藏`
+  if (activeTab.value === 'topology') return `发现 ${topologyFoundCount.value} 条链路`
   return ''
 })
 
@@ -162,6 +181,11 @@ function onSwitchStats(stats) {
 function onFavoritesStats(stats) {
   favoriteTotal.value = stats.total || 0
   favoriteOnlineCount.value = stats.online || 0
+}
+
+function onTopologyStats(stats) {
+  topologyFoundCount.value = stats.found || 0
+  topologyPendingCount.value = stats.pending || 0
 }
 
 function logout() {

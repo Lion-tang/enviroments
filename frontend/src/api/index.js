@@ -119,3 +119,10 @@ export const switchLogs = {
 
   clear: (switchId) => api.delete(`/switches/${switchId}/logs/clear`),
 }
+
+export const topology = {
+  get: () => api.get('/topology').then(r => r.data),
+
+  discover: (serverIds = null) =>
+    api.post('/topology/discover', { server_ids: serverIds }).then(r => r.data),
+}
