@@ -23,6 +23,7 @@
 
     <div class="topology-layout">
       <section
+        ref="canvasRef"
         class="topology-canvas"
         v-loading="loading || discovering"
         @mousedown="onCanvasMouseDown"
@@ -32,37 +33,39 @@
         @wheel.prevent="onCanvasWheel"
       >
         <div class="canvas-viewport">
-          <svg class="topology-svg" :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
-            <!-- 连线 -->
-            <path
-              v-for="edge in positionedEdges"
-              :key="edge.id"
-              :d="edge.pathD"
-              :class="['topology-edge', edge.kind, edge.status]"
-            />
-            <!-- 连线标签 -->
-            <g
-              v-for="edge in positionedEdges"
-              :key="`${edge.id}-label`"
-              class="edge-label"
-              :transform="`translate(${edge.labelX}, ${edge.labelY})`"
-            >
-              <rect x="-70" y="-14" width="140" height="28" rx="6" />
-              <text text-anchor="middle" dominant-baseline="middle">
-                {{ edgeLabel(edge) }}
-              </text>
-            </g>
-            <!-- 节点 -->
-            <g
-              v-for="node in positionedNodes"
-              :key="node.id"
-              class="topology-node"
-              :class="[node.type, { offline: node.online === false }]"
-              :transform="`translate(${node.x}, ${node.y})`"
-              @click.stop="openNode(node)"
-            >
-              <circle r="34" />
-              <text class="node-ip-in-circle" text-anchor="middle" dominant-baseline="central">{{ node.ip }}</text>
+          <svg class="topology-svg" :viewBox="`0 0 ${svgW} ${svgH}`" preserveAspectRatio="xMidYMid meet">
+            <g :transform="`scale(${zoom}) translate(${panX}, ${panY})`">
+              <!-- 连线 -->
+              <path
+                v-for="edge in positionedEdges"
+                :key="edge.id"
+                :d="edge.pathD"
+                :class="['topology-edge', edge.kind, edge.status]"
+              />
+              <!-- 连线标签 -->
+              <g
+                v-for="edge in positionedEdges"
+                :key="`${edge.id}-label`"
+                class="edge-label"
+                :transform="`translate(${edge.labelX}, ${edge.labelY})`"
+              >
+                <rect x="-70" y="-14" width="140" height="28" rx="6" />
+                <text text-anchor="middle" dominant-baseline="middle">
+                  {{ edgeLabel(edge) }}
+                </text>
+              </g>
+              <!-- 节点 -->
+              <g
+                v-for="node in positionedNodes"
+                :key="node.id"
+                class="topology-node"
+                :class="[node.type, { offline: node.online === false }]"
+                :transform="`translate(${node.x}, ${node.y})`"
+                @click.stop="openNode(node)"
+              >
+                <circle r="34" />
+                <text class="node-ip-in-circle" text-anchor="middle" dominant-baseline="central">{{ node.ip }}</text>
+              </g>
             </g>
           </svg>
         </div>
@@ -96,7 +99,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Connection, Refresh } from '@element-plus/icons-vue'
 import { topology as topologyApi } from '../api/index.js'
@@ -113,62 +116,53 @@ const links = ref([])
 const activeServerId = ref(null)
 const activeSwitchId = ref(null)
 
-// 画布平移 & 缩放
+// 画布状态
+const canvasRef = ref(null)
+const zoom = ref(1)
 const panX = ref(0)
 const panY = ref(0)
-const zoom = ref(1)
 const isPanning = ref(false)
 const panStart = { x: 0, y: 0 }
 const panStartOffset = { x: 0, y: 0 }
 
-const canvasWidth = 1120
-const canvasHeight = 660
+// SVG 画布固定尺寸（单位：px，viewBox 坐标空间）
+const svgW = 1400
+const svgH = 800
 
-const canvas = computed(() => {
-  const count = Math.max(nodes.value.length, 1)
-  const height = Math.max(680, count * 120 + 80)
-  return { width: canvasWidth, height }
-})
-
-const viewBox = computed(() => {
-  const w = canvas.value.width
-  const h = canvas.value.height
-  const zw = w / zoom.value
-  const zh = h / zoom.value
-  const cx = panX.value + w / 2
-  const cy = panY.value + h / 2
-  return `${cx - zw / 2} ${cy - zh / 2} ${zw} ${zh}`
-})
+// 节点半径
+const NODE_R = 34
+// 左边交换机列 x 坐标，右边服务器列 x 坐标
+const COL_SWITCH_X = 220
+const COL_SERVER_X = 1180
+// top padding（顶部留间隙）
+const TOP_PAD = 60
+// 节点之间最小间距
+const NODE_GAP = 90
 
 const switchNodes = computed(() => nodes.value.filter(n => n.type === 'switch'))
 const serverNodes = computed(() => nodes.value.filter(n => n.type === 'server'))
 const foundEdges = computed(() => edges.value.filter(e => e.kind === 'discovered' && e.status === 'found'))
 const associationEdges = computed(() => edges.value.filter(e => e.kind === 'association'))
 
+/** 节点从顶部 startY 向下排布 */
+function verticalLayout(list, startX) {
+  const count = list.length
+  if (count === 0) return []
+  // 计算总高度，用 SVG 高度兜底
+  const totalH = count * (NODE_R * 2 + NODE_GAP) - NODE_GAP
+  const offsetY = TOP_PAD
+  return list.map((node, i) => ({
+    ...node,
+    x: startX,
+    y: offsetY + i * (NODE_R * 2 + NODE_GAP) + NODE_R,
+  }))
+}
+
 const positionedNodes = computed(() => {
-  const result = []
-  const sw = switchNodes.value
-  const sv = serverNodes.value
-  const h = canvas.value.height
-
-  const swGap = sw.length > 1 ? (h - 80) / (sw.length - 1) : h / 2
-  const svGap = sv.length > 1 ? (h - 80) / (sv.length - 1) : h / 2
-
-  sw.forEach((node, i) => {
-    result.push({
-      ...node,
-      x: 260,
-      y: sw.length > 1 ? Math.round(40 + swGap * i) : Math.round(h / 2),
-    })
-  })
-  sv.forEach((node, i) => {
-    result.push({
-      ...node,
-      x: 820,
-      y: sv.length > 1 ? Math.round(40 + svGap * i) : Math.round(h / 2),
-    })
-  })
-  return result
+  return [
+    ...verticalLayout(switchNodes.value, COL_SWITCH_X),
+    ...verticalLayout(serverNodes.value, COL_SERVER_X),
+  ]
 })
 
 const nodeMap = computed(() => {
@@ -177,56 +171,48 @@ const nodeMap = computed(() => {
   return map
 })
 
-const positionedEdges = computed(() => {
-  // 统计同一对 (source, target) 的 edge 数量，用于计算偏移
-  const pairCount = {}
-  const pairIndex = {}
-  edges.value.forEach(edge => {
-    const key = `${edge.source}|${edge.target}`
-    if (!pairCount[key]) pairCount[key] = 0
-    pairCount[key]++
-  })
-  edges.value.forEach(edge => {
-    const key = `${edge.source}|${edge.target}`
-    if (!(key in pairIndex)) pairIndex[key] = 0
-    pairIndex[key]++
-  })
+/**
+ * 从圆心到圆边的交点
+ * 从 (cx,cy) 到 (tx,ty) 方向缩短 radius 距离
+ */
+function circleEdge(cx, cy, tx, ty, radius) {
+  const dx = tx - cx
+  const dy = ty - cy
+  const len = Math.sqrt(dx * dx + dy * dy)
+  if (len === 0) return { x: cx, y: cy }
+  const ratio = radius / len
+  return {
+    x: cx + dx * ratio,
+    y: cy + dy * ratio,
+  }
+}
 
+const positionedEdges = computed(() => {
+  const r = NODE_R
   return edges.value
     .map(edge => {
       const source = nodeMap.value.get(edge.source)
       const target = nodeMap.value.get(edge.target)
       if (!source || !target) return null
 
-      const key = `${edge.source}|${edge.target}`
-      const total = pairCount[key] || 1
-      const idx = pairIndex[key]--   // 从大到小
-      const offset = total > 1 ? (idx - (total + 1) / 2) * 28 : 0
-
-      const mx = (source.x + target.x) / 2
-      const my = (source.y + target.y) / 2
-      const dx = target.x - source.x
-      const dy = target.y - source.y
-      const len = Math.sqrt(dx * dx + dy * dy)
-      // 垂直方向单位向量
-      const ux = len > 0 ? -dy / len : 0
-      const uy = len > 0 ? dx / len : 0
-
-      // 只保留 found 和 association，不显示 not_found
+      // 只保留 found 和 association
       if (edge.status === 'not_found') return null
-      const sx = source.x + ux * offset
-      const sy = source.y + uy * offset
-      const tx = target.x + ux * offset
-      const ty = target.y + uy * offset
+
+      // 从圆心坐标 => 圆边坐标
+      const s = circleEdge(source.x, source.y, target.x, target.y, r)
+      const t = circleEdge(target.x, target.y, source.x, source.y, r)
+
+      const mx = (s.x + t.x) / 2
+      const my = (s.y + t.y) / 2
 
       return {
         ...edge,
-        source,
-        target,
-        sx, sy, tx, ty,
-        labelX: Math.round(mx + ux * offset),
-        labelY: Math.round(my + uy * offset),
-        pathD: `M${sx},${sy} L${tx},${ty}`,
+        source, target,
+        sx: s.x, sy: s.y,
+        tx: t.x, ty: t.y,
+        labelX: Math.round(mx),
+        labelY: Math.round(my),
+        pathD: `M${s.x},${s.y} L${t.x},${t.y}`,
       }
     })
     .filter(Boolean)
@@ -270,6 +256,7 @@ function openNode(node) {
 
 // ── 画布拖拽平移 ──
 function onCanvasMouseDown(event) {
+  if (event.button !== 0) return
   isPanning.value = true
   panStart.x = event.clientX
   panStart.y = event.clientY
@@ -279,8 +266,8 @@ function onCanvasMouseDown(event) {
 
 function onCanvasMouseMove(event) {
   if (!isPanning.value) return
-  panX.value = panStartOffset.x + (panStart.x - event.clientX)
-  panY.value = panStartOffset.y + (panStart.y - event.clientY)
+  panX.value = panStartOffset.x + (panStart.x - event.clientX) / (svgW * zoom.value * 0.0015)
+  panY.value = panStartOffset.y + (panStart.y - event.clientY) / (svgW * zoom.value * 0.0015)
 }
 
 function onCanvasMouseUp() {
@@ -289,8 +276,7 @@ function onCanvasMouseUp() {
 
 function onCanvasWheel(event) {
   const delta = event.deltaY > 0 ? -0.12 : 0.12
-  const newZoom = Math.max(0.3, Math.min(5, zoom.value + delta))
-  zoom.value = newZoom
+  zoom.value = Math.max(0.3, Math.min(5, zoom.value + delta))
 }
 
 function resetView() {
@@ -308,6 +294,7 @@ function publishStats() {
 
 async function loadTopology() {
   loading.value = true
+  zoom.value = 1
   panX.value = 0
   panY.value = 0
   try {
