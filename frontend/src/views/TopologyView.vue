@@ -9,7 +9,7 @@
       </el-button>
       <el-tag type="success">端口链路 {{ foundEdges.length }}</el-tag>
       <el-tag type="info">关联线 {{ associationEdges.length }}</el-tag>
-      <el-button v-if="zoom !== 1" size="small" @click="resetView">重置视图</el-button>
+      <el-button v-if="!(zoom === 1 && panX === 0 && panY === 0)" size="small" @click="resetView">重置视图</el-button>
       <el-divider direction="vertical" />
       <span class="legend">
         <svg width="40" height="14" class="legend-svg"><line x1="0" y1="7" x2="40" y2="7" stroke="var(--online)" stroke-width="3" /></svg>
@@ -33,39 +33,37 @@
         @wheel.prevent="onCanvasWheel"
       >
         <div class="canvas-viewport">
-          <svg class="topology-svg" :viewBox="`0 0 ${svgW} ${svgH}`" preserveAspectRatio="xMidYMid meet">
-            <g :transform="`scale(${zoom}) translate(${panX}, ${panY})`">
-              <!-- 连线 -->
-              <path
-                v-for="edge in positionedEdges"
-                :key="edge.id"
-                :d="edge.pathD"
-                :class="['topology-edge', edge.kind, edge.status]"
-              />
-              <!-- 连线标签 -->
-              <g
-                v-for="edge in positionedEdges"
-                :key="`${edge.id}-label`"
-                class="edge-label"
-                :transform="`translate(${edge.labelX}, ${edge.labelY})`"
-              >
-                <rect x="-70" y="-14" width="140" height="28" rx="6" />
-                <text text-anchor="middle" dominant-baseline="middle">
-                  {{ edgeLabel(edge) }}
-                </text>
-              </g>
-              <!-- 节点 -->
-              <g
-                v-for="node in positionedNodes"
-                :key="node.id"
-                class="topology-node"
-                :class="[node.type, { offline: node.online === false }]"
-                :transform="`translate(${node.x}, ${node.y})`"
-                @click.stop="openNode(node)"
-              >
-                <circle r="34" />
-                <text class="node-ip-in-circle" text-anchor="middle" dominant-baseline="central">{{ node.ip }}</text>
-              </g>
+          <svg class="topology-svg" :viewBox="viewBoxStr" preserveAspectRatio="xMidYMid meet">
+            <!-- 连线 -->
+            <path
+              v-for="edge in positionedEdges"
+              :key="edge.id"
+              :d="edge.pathD"
+              :class="['topology-edge', edge.kind, edge.status]"
+            />
+            <!-- 连线标签 -->
+            <g
+              v-for="edge in positionedEdges"
+              :key="`${edge.id}-label`"
+              class="edge-label"
+              :transform="`translate(${edge.labelX}, ${edge.labelY})`"
+            >
+              <rect x="-70" y="-14" width="140" height="28" rx="6" />
+              <text text-anchor="middle" dominant-baseline="middle">
+                {{ edgeLabel(edge) }}
+              </text>
+            </g>
+            <!-- 节点 -->
+            <g
+              v-for="node in positionedNodes"
+              :key="node.id"
+              class="topology-node"
+              :class="[node.type, { offline: node.online === false }]"
+              :transform="`translate(${node.x}, ${node.y})`"
+              @click.stop="openNode(node)"
+            >
+              <circle r="34" />
+              <text class="node-ip-in-circle" text-anchor="middle" dominant-baseline="central">{{ node.ip }}</text>
             </g>
           </svg>
         </div>
@@ -99,7 +97,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, nextTick } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Connection, Refresh } from '@element-plus/icons-vue'
 import { topology as topologyApi } from '../api/index.js'
@@ -116,45 +114,40 @@ const links = ref([])
 const activeServerId = ref(null)
 const activeSwitchId = ref(null)
 
-// 画布状态
+// 画布状态 — viewBox 直接控制
 const canvasRef = ref(null)
-const zoom = ref(1)
-const panX = ref(0)
-const panY = ref(0)
+const vbx = ref(0)    // viewBox x
+const vby = ref(0)    // viewBox y
+const vbw = ref(1400) // viewBox width
+const vbh = ref(800)  // viewBox height
 const isPanning = ref(false)
 const panStart = { x: 0, y: 0 }
-const panStartOffset = { x: 0, y: 0 }
+const panStartBox = { x: 0, y: 0 }
 
-// SVG 画布固定尺寸（单位：px，viewBox 坐标空间）
-const svgW = 1400
-const svgH = 800
-
-// 节点半径
 const NODE_R = 34
-// 左边交换机列 x 坐标，右边服务器列 x 坐标
 const COL_SWITCH_X = 220
 const COL_SERVER_X = 1180
-// top padding（顶部留间隙）
 const TOP_PAD = 60
-// 节点之间最小间距
 const NODE_GAP = 90
+
+// 从 viewBox 推导 zoom（相对于基准宽度 1400）
+const zoom = computed(() => +(1400 / vbw.value).toFixed(2))
+
+const viewBoxStr = computed(() => `${vbx.value} ${vby.value} ${vbw.value} ${vbh.value}`)
 
 const switchNodes = computed(() => nodes.value.filter(n => n.type === 'switch'))
 const serverNodes = computed(() => nodes.value.filter(n => n.type === 'server'))
 const foundEdges = computed(() => edges.value.filter(e => e.kind === 'discovered' && e.status === 'found'))
 const associationEdges = computed(() => edges.value.filter(e => e.kind === 'association'))
 
-/** 节点从顶部 startY 向下排布 */
+/** 节点从顶部向下排布 */
 function verticalLayout(list, startX) {
   const count = list.length
   if (count === 0) return []
-  // 计算总高度，用 SVG 高度兜底
-  const totalH = count * (NODE_R * 2 + NODE_GAP) - NODE_GAP
-  const offsetY = TOP_PAD
   return list.map((node, i) => ({
     ...node,
     x: startX,
-    y: offsetY + i * (NODE_R * 2 + NODE_GAP) + NODE_R,
+    y: TOP_PAD + i * (NODE_R * 2 + NODE_GAP) + NODE_R,
   }))
 }
 
@@ -171,48 +164,80 @@ const nodeMap = computed(() => {
   return map
 })
 
-/**
- * 从圆心到圆边的交点
- * 从 (cx,cy) 到 (tx,ty) 方向缩短 radius 距离
- */
+/** 计算圆边交点 */
 function circleEdge(cx, cy, tx, ty, radius) {
   const dx = tx - cx
   const dy = ty - cy
   const len = Math.sqrt(dx * dx + dy * dy)
   if (len === 0) return { x: cx, y: cy }
   const ratio = radius / len
-  return {
-    x: cx + dx * ratio,
-    y: cy + dy * ratio,
-  }
+  return { x: cx + dx * ratio, y: cy + dy * ratio }
 }
 
 const positionedEdges = computed(() => {
   const r = NODE_R
+
+  // 统计同一对 (source, target) 的发现链路数量
+  const pairCount = {}
+  const pairIndex = {}
+  edges.value.forEach(edge => {
+    if (edge.status === 'not_found') return
+    if (edge.kind !== 'discovered') return
+    const key = `${edge.source}|${edge.target}`
+    if (!pairCount[key]) pairCount[key] = 0
+    pairCount[key]++
+  })
+  edges.value.forEach(edge => {
+    if (edge.status === 'not_found') return
+    if (edge.kind !== 'discovered') return
+    const key = `${edge.source}|${edge.target}`
+    if (!(key in pairIndex)) pairIndex[key] = 0
+    pairIndex[key]++
+  })
+
   return edges.value
     .map(edge => {
       const source = nodeMap.value.get(edge.source)
       const target = nodeMap.value.get(edge.target)
       if (!source || !target) return null
-
-      // 只保留 found 和 association
       if (edge.status === 'not_found') return null
 
-      // 从圆心坐标 => 圆边坐标
-      const s = circleEdge(source.x, source.y, target.x, target.y, r)
-      const t = circleEdge(target.x, target.y, source.x, source.y, r)
+      // 计算偏移（仅 discovered 多线偏移，association 不偏移）
+      let offset = 0
+      if (edge.kind === 'discovered') {
+        const key = `${edge.source}|${edge.target}`
+        const total = pairCount[key] || 1
+        const idx = pairIndex[key]
+        if (pairIndex[key] !== undefined) pairIndex[key]--
+        offset = total > 1 ? (idx - (total + 1) / 2) * 28 : 0
+      }
 
-      const mx = (s.x + t.x) / 2
-      const my = (s.y + t.y) / 2
+      // 从圆心算起，先算圆边交点
+      const sCenter = circleEdge(source.x, source.y, target.x, target.y, r)
+      const tCenter = circleEdge(target.x, target.y, source.x, source.y, r)
+
+      // 加上垂直偏移
+      const dx = target.x - source.x
+      const dy = target.y - source.y
+      const len = Math.sqrt(dx * dx + dy * dy)
+      const ux = len > 0 ? -dy / len : 0
+      const uy = len > 0 ? dx / len : 0
+
+      const sx = sCenter.x + ux * offset
+      const sy = sCenter.y + uy * offset
+      const tx = tCenter.x + ux * offset
+      const ty = tCenter.y + uy * offset
+
+      const mx = (sx + tx) / 2
+      const my = (sy + ty) / 2
 
       return {
         ...edge,
         source, target,
-        sx: s.x, sy: s.y,
-        tx: t.x, ty: t.y,
+        sx, sy, tx, ty,
         labelX: Math.round(mx),
         labelY: Math.round(my),
-        pathD: `M${s.x},${s.y} L${t.x},${t.y}`,
+        pathD: `M${sx},${sy} L${tx},${ty}`,
       }
     })
     .filter(Boolean)
@@ -254,20 +279,27 @@ function openNode(node) {
   if (node.type === 'switch') activeSwitchId.value = node.entity_id
 }
 
-// ── 画布拖拽平移 ──
+// ── 画布拖拽平移（viewBox 直接偏移） ──
 function onCanvasMouseDown(event) {
   if (event.button !== 0) return
   isPanning.value = true
   panStart.x = event.clientX
   panStart.y = event.clientY
-  panStartOffset.x = panX.value
-  panStartOffset.y = panY.value
+  panStartBox.x = vbx.value
+  panStartBox.y = vby.value
 }
 
 function onCanvasMouseMove(event) {
   if (!isPanning.value) return
-  panX.value = panStartOffset.x + (panStart.x - event.clientX) / (svgW * zoom.value * 0.0015)
-  panY.value = panStartOffset.y + (panStart.y - event.clientY) / (svgW * zoom.value * 0.0015)
+  // 鼠标拖拽方向与 viewBox 偏移方向一致
+  const container = canvasRef.value
+  if (!container) return
+  const rect = container.getBoundingClientRect()
+  // 像素到 viewBox 坐标的比例
+  const scaleX = vbw.value / rect.width
+  const scaleY = vbh.value / rect.height
+  vbx.value = panStartBox.x + (panStart.x - event.clientX) * scaleX
+  vby.value = panStartBox.y + (panStart.y - event.clientY) * scaleY
 }
 
 function onCanvasMouseUp() {
@@ -275,14 +307,35 @@ function onCanvasMouseUp() {
 }
 
 function onCanvasWheel(event) {
-  const delta = event.deltaY > 0 ? -0.12 : 0.12
-  zoom.value = Math.max(0.3, Math.min(5, zoom.value + delta))
+  const container = canvasRef.value
+  if (!container) return
+  const rect = container.getBoundingClientRect()
+  // 鼠标在 viewBox 坐标系中的位置
+  const mx = vbx.value + (event.clientX - rect.left) / rect.width * vbw.value
+  const my = vby.value + (event.clientY - rect.top) / rect.height * vbh.value
+
+  const factor = event.deltaY > 0 ? 1.2 : 1 / 1.2
+  const newW = Math.max(400, Math.min(8000, vbw.value * factor))
+  const newH = Math.max(300, Math.min(6000, vbh.value * factor))
+
+  // 保持鼠标位置不变
+  vbx.value = mx - (event.clientX - rect.left) / rect.width * newW
+  vby.value = my - (event.clientY - rect.top) / rect.height * newH
+  vbw.value = newW
+  vbh.value = newH
 }
 
 function resetView() {
-  zoom.value = 1
-  panX.value = 0
-  panY.value = 0
+  vbx.value = 0
+  vby.value = 0
+  vbw.value = 1400
+  vbh.value = 800
+}
+
+function calcSvgHeight() {
+  const maxCount = Math.max(switchNodes.value.length, serverNodes.value.length)
+  const h = TOP_PAD + maxCount * (NODE_R * 2 + NODE_GAP) + 80
+  return Math.max(800, h)
 }
 
 function publishStats() {
@@ -294,14 +347,18 @@ function publishStats() {
 
 async function loadTopology() {
   loading.value = true
-  zoom.value = 1
-  panX.value = 0
-  panY.value = 0
+  resetView()
   try {
     const data = await topologyApi.get()
     nodes.value = data.nodes || []
     edges.value = data.edges || []
     links.value = data.links || []
+    // 根据节点数量动态调整 viewBox 高度
+    const h = calcSvgHeight()
+    vbw.value = 1400
+    vbh.value = h
+    vbx.value = 0
+    vby.value = 0
     publishStats()
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '加载拓扑失败')
