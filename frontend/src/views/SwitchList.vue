@@ -135,7 +135,7 @@
 import { ref, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
-import { switches, serverSwitchAssoc } from '../api/index.js'
+import { switches } from '../api/index.js'
 import { servers } from '../api/index.js'
 import SwitchDetail from '../components/SwitchDetail.vue'
 
@@ -296,8 +296,8 @@ async function openAssocDialog(row) {
   selectedServerIds.value = []
   showAssocDialog.value = true
   try {
-    const data = await serverSwitchAssoc.get(row.id)
-    selectedServerIds.value = (data.switches || []).map(s => s.id)
+    const data = await switches.getServers(row.id)
+    selectedServerIds.value = (data || []).map(s => s.id)
     const all = await servers.list()
     allServers.value = all.servers
   } catch (e) {
