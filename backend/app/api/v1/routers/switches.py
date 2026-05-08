@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -25,6 +26,16 @@ def _write_log(switch_id: int, payload: dict):
     line = json.dumps(payload, ensure_ascii=False)
     with open(os.path.join(_LOG_DIR, f"switch_{switch_id}.log"), "a", encoding="utf-8") as f:
         f.write(line + "\n")
+
+
+def _server_cached_hostname(server: Server) -> Optional[str]:
+    if not server.cached_info:
+        return None
+    try:
+        cached = json.loads(server.cached_info)
+        return cached.get("hostname")
+    except Exception:
+        return None
 
 
 @router.get("", response_model=SwitchListResponse)
@@ -190,7 +201,7 @@ def get_switch_servers(switch_id: int, db: Session = Depends(get_db)):
     if not switch:
         raise HTTPException(status_code=404, detail="Switch not found")
     return [
-        {"id": s.id, "ip": s.ip, "hostname": s.cached_hostname, "os_type": s.os_type}
+        {"id": s.id, "ip": s.ip, "hostname": _server_cached_hostname(s), "os_type": s.os_type}
         for s in switch.servers
     ]
 
