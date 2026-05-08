@@ -222,13 +222,20 @@ def discover_topology(payload: TopologyDiscoverRequest, db: Session = Depends(ge
 
     switch_mac_maps = {}  # { switch_id: mac_map }
     for switch in involved_switches:
-        result = fetch_all_macs_from_switch_via_ssh(
-            ip=switch.ip,
-            username=switch.username,
-            password=switch.password,
-            port=switch.port,
-        )
-        switch_mac_maps[switch.id] = result
+        try:
+            result = fetch_all_macs_from_switch_via_ssh(
+                ip=switch.ip,
+                username=switch.username,
+                password=switch.password,
+                port=switch.port,
+            )
+            switch_mac_maps[switch.id] = result
+        except Exception as e:
+            switch_mac_maps[switch.id] = {
+                "error": str(e),
+                "mac_map": {},
+                "raw_output": None,
+            }
 
     # ── Step 4: 匹配并写入 DB ──
     results = []

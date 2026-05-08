@@ -124,5 +124,5 @@ export const topology = {
   get: () => api.get('/topology').then(r => r.data),
 
   discover: (serverIds = null) =>
-    api.post('/topology/discover', { server_ids: serverIds }).then(r => r.data),
+    api.post('/topology/discover', { server_ids: serverIds }, { timeout: 120000 }).then(r => r.data),
 }

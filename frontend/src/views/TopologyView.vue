@@ -5,10 +5,11 @@
         <el-icon><Refresh /></el-icon> 刷新拓扑
       </el-button>
       <el-button type="success" @click="discoverLinks" :loading="discovering">
-        <el-icon><Connection /></el-icon> 发现链路
+        <el-icon><Connection /></el-icon> 重新生成拓扑图
       </el-button>
       <el-tag type="success">端口链路 {{ foundEdges.length }}</el-tag>
       <el-tag type="info">关联线 {{ associationEdges.length }}</el-tag>
+      <el-button v-if="zoom !== 1" size="small" @click="resetView">重置视图</el-button>
       <el-divider direction="vertical" />
       <span class="legend">
         <svg width="40" height="14" class="legend-svg"><line x1="0" y1="7" x2="40" y2="7" stroke="var(--online)" stroke-width="3" /></svg>
@@ -28,6 +29,7 @@
         @mousemove="onCanvasMouseMove"
         @mouseup="onCanvasMouseUp"
         @mouseleave="onCanvasMouseUp"
+        @wheel.prevent="onCanvasWheel"
       >
         <div class="canvas-viewport">
           <svg class="topology-svg" :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
@@ -111,9 +113,10 @@ const links = ref([])
 const activeServerId = ref(null)
 const activeSwitchId = ref(null)
 
-// 画布平移
+// 画布平移 & 缩放
 const panX = ref(0)
 const panY = ref(0)
+const zoom = ref(1)
 const isPanning = ref(false)
 const panStart = { x: 0, y: 0 }
 const panStartOffset = { x: 0, y: 0 }
@@ -130,7 +133,11 @@ const canvas = computed(() => {
 const viewBox = computed(() => {
   const w = canvas.value.width
   const h = canvas.value.height
-  return `${panX.value} ${panY.value} ${w} ${h}`
+  const zw = w / zoom.value
+  const zh = h / zoom.value
+  const cx = panX.value + w / 2
+  const cy = panY.value + h / 2
+  return `${cx - zw / 2} ${cy - zh / 2} ${zw} ${zh}`
 })
 
 const switchNodes = computed(() => nodes.value.filter(n => n.type === 'switch'))
@@ -278,6 +285,18 @@ function onCanvasMouseMove(event) {
 
 function onCanvasMouseUp() {
   isPanning.value = false
+}
+
+function onCanvasWheel(event) {
+  const delta = event.deltaY > 0 ? -0.12 : 0.12
+  const newZoom = Math.max(0.3, Math.min(5, zoom.value + delta))
+  zoom.value = newZoom
+}
+
+function resetView() {
+  zoom.value = 1
+  panX.value = 0
+  panY.value = 0
 }
 
 function publishStats() {
