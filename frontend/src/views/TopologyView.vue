@@ -33,7 +33,7 @@
         @wheel.prevent="onCanvasWheel"
       >
         <div class="canvas-viewport">
-          <svg class="topology-svg" :viewBox="viewBoxStr" preserveAspectRatio="xMidYMid meet">
+          <svg class="topology-svg" :viewBox="viewBoxStr" preserveAspectRatio="xMinYMin meet">
             <!-- 连线 -->
             <path
               v-for="edge in positionedEdges"
