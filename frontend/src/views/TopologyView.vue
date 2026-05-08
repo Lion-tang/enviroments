@@ -62,7 +62,7 @@
               :transform="`translate(${node.x}, ${node.y})`"
               @click.stop="openNode(node)"
             >
-              <circle r="34" />
+              <circle r="46" />
               <text class="node-ip-in-circle" text-anchor="middle" dominant-baseline="central">{{ node.ip }}</text>
             </g>
           </svg>
@@ -124,7 +124,7 @@ const isPanning = ref(false)
 const panStart = { x: 0, y: 0 }
 const panStartBox = { x: 0, y: 0 }
 
-const NODE_R = 34
+const NODE_R = 46
 const COL_SWITCH_X = 220
 const COL_SERVER_X = 1180
 const TOP_PAD = 60
@@ -491,7 +491,7 @@ onMounted(loadTopology)
 
 .node-ip-in-circle {
   fill: var(--text-primary);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 700;
 }
 
