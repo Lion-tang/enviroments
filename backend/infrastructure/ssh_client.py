@@ -505,15 +505,13 @@ def _parse_mac_address_output(raw: str, mac: str) -> dict:
         return {"found": False, "interface": None, "vlan": None}
 
     line = candidates[0]
-    vlan = None
-    vlan_match = re.search(r"(?<![/\w-])(\d{1,4})(?![/\w-])", line)
-    if vlan_match:
-        vlan = vlan_match.group(1)
 
+    # Extract interface name (handle 25GE, 40GE, 50GE, 100GE etc.)
     iface = None
     iface_patterns = [
-        r"(?:X?GigabitEthernet|Ten-GigabitEthernet|FortyGigE|HundredGigE|Ethernet|GE|XGE|Eth-Trunk|Bridge-Aggregation)[\w/.-]+",
-        r"\b(?:Eth|Gi|Te|Twe|Fo|Hu)\d+(?:/\d+)+(?:\.\d+)?\b",
+        r"(?:X?GigabitEthernet|Ten-GigabitEthernet|FortyGigE|HundredGigE|Ethernet|Eth-Trunk|Bridge-Aggregation)[\w/.-]+",
+        r"\b(?:(?:25|40|50|100)?GE|XGE)\d+(?:/\d+)+",
+        r"\b(?:Eth|Gi|Te|Twe|Fo|Hu)\d+(?:/\d+)+",
     ]
     for pattern in iface_patterns:
         match = re.search(pattern, line, re.IGNORECASE)
@@ -521,6 +519,24 @@ def _parse_mac_address_output(raw: str, mac: str) -> dict:
             iface = match.group(0)
             break
 
+    # Extract VLAN: after the MAC, the next whitespace-separated field is VLAN/VSI/BD
+    # H3C format: "1/-/-" or just "1" (VLAN/VSI/BD)
+    vlan = None
+    mac_pattern = re.compile(
+        r'(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}'
+        r'|[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}'
+        r'|[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}'
+        r'|[0-9A-Fa-f]{12}'
+    )
+    mac_match = mac_pattern.search(line)
+    if mac_match:
+        after_mac = line[mac_match.end():].lstrip()
+        vlan_field = after_mac.split()[0] if after_mac else ''
+        vlan_m = re.match(r'(\d+)', vlan_field)
+        if vlan_m:
+            v = int(vlan_m.group(1))
+            if 1 <= v <= 4094:
+                vlan = str(v)
     return {"found": True, "interface": iface, "vlan": vlan, "line": line}
 
 
@@ -567,18 +583,25 @@ def _parse_mac_table_line(line: str) -> Optional[dict]:
     if not mac:
         return None
 
-    # Extract VLAN (first number that looks reasonable)
+    # Extract VLAN: after the MAC, the next whitespace-separated field is VLAN/VSI/BD
+    # H3C format: "1/-/-" or just "1" (VLAN/VSI/BD)
     vlan = None
-    vlan_match = re.search(r"(?<![\w./-])(\d{1,4})(?![\w./-])", line_s)
-    if vlan_match:
-        v = int(vlan_match.group(1))
-        if 1 <= v <= 4094:
-            vlan = str(v)
+    mac_end = mac_match.end()
+    after_mac = line_s[mac_end:].lstrip()
+    fields = after_mac.split()
+    if fields:
+        vlan_field = fields[0]
+        vlan_m = re.match(r'(\d+)', vlan_field)
+        if vlan_m:
+            v = int(vlan_m.group(1))
+            if 1 <= v <= 4094:
+                vlan = str(v)
 
-    # Extract interface name
+    # Extract interface name (handle 25GE, 40GE, 50GE, 100GE etc.)
     iface = None
     iface_patterns = [
-        r"(?:X?GigabitEthernet|Ten-GigabitEthernet|FortyGigE|HundredGigE|Ethernet|GE|XGE|Eth-Trunk|Bridge-Aggregation)[\w/.-]+",
+        r"(?:X?GigabitEthernet|Ten-GigabitEthernet|FortyGigE|HundredGigE|Ethernet|Eth-Trunk|Bridge-Aggregation)[\w/.-]+",
+        r"\b(?:(?:25|40|50|100)?GE|XGE)\d+(?:/\d+)+",
         r"\b(?:Eth|Gi|Te|Twe|Fo|Hu)\d+(?:/\d+)+",
     ]
     for pattern in iface_patterns:
