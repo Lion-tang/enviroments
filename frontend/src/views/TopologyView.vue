@@ -7,87 +7,107 @@
       <el-button type="success" @click="discoverLinks" :loading="discovering">
         <el-icon><Connection /></el-icon> 重新生成拓扑图
       </el-button>
-      <el-tag type="success">端口链路 {{ foundEdges.length }}</el-tag>
-      <el-tag type="info">关联线 {{ associationEdges.length }}</el-tag>
-      <el-button v-if="!(zoom === 1 && panX === 0 && panY === 0)" size="small" @click="resetView">重置视图</el-button>
-      <el-divider direction="vertical" />
-      <span class="legend">
-        <svg width="40" height="14" class="legend-svg"><line x1="0" y1="7" x2="40" y2="7" stroke="var(--online)" stroke-width="3" /></svg>
-        已链接
-        <svg width="40" height="14" class="legend-svg legend-dash"><line x1="0" y1="7" x2="40" y2="7" stroke="var(--warning)" stroke-width="2" stroke-dasharray="8 8" /></svg>
-        未学习到
-        <svg width="40" height="14" class="legend-svg"><line x1="0" y1="7" x2="40" y2="7" stroke="var(--text-muted)" stroke-width="2" stroke-dasharray="6 8" /></svg>
-        仅关联
-      </span>
+      <el-tag type="success">链路 {{ foundLinks.length }}</el-tag>
+      <el-tag type="info">交换机 {{ switchNodes.length }}</el-tag>
+      <el-tag type="info">服务器 {{ serverNodes.length }}</el-tag>
+      <el-button v-if="!isDefaultView" size="small" @click="resetView">重置视图</el-button>
     </div>
 
     <div class="topology-layout">
       <section
         ref="canvasRef"
         class="topology-canvas"
+        :class="{ dragging: isPanning }"
         v-loading="loading || discovering"
         @mousedown="onCanvasMouseDown"
-        @mousemove="onCanvasMouseMove"
-        @mouseup="onCanvasMouseUp"
-        @mouseleave="onCanvasMouseUp"
         @wheel.prevent="onCanvasWheel"
       >
         <div class="canvas-viewport">
-          <svg class="topology-svg" :viewBox="viewBoxStr" preserveAspectRatio="xMinYMin meet">
-            <!-- 连线 -->
+          <svg class="topology-svg" :viewBox="viewBoxStr" preserveAspectRatio="xMidYMin meet">
             <path
               v-for="edge in positionedEdges"
               :key="edge.id"
               :d="edge.pathD"
-              :class="['topology-edge', edge.kind, edge.status]"
+              class="topology-edge"
+              :class="{ dim: !edge.related, active: edge.active }"
             />
-            <!-- 连线标签 -->
-            <g
-              v-for="edge in positionedEdges"
-              :key="`${edge.id}-label`"
-              class="edge-label"
-              :transform="`translate(${edge.labelX}, ${edge.labelY})`"
-            >
-              <rect x="-70" y="-14" width="140" height="28" rx="6" />
-              <text text-anchor="middle" dominant-baseline="middle">
-                {{ edgeLabel(edge) }}
-              </text>
-            </g>
-            <!-- 节点 -->
+
             <g
               v-for="node in positionedNodes"
               :key="node.id"
               class="topology-node"
-              :class="[node.type, { offline: node.online === false }]"
+              :class="[node.type, { active: node.active, dim: !node.related, offline: node.online === false }]"
               :transform="`translate(${node.x}, ${node.y})`"
-              @click.stop="openNode(node)"
+              @click.stop="selectNode(node)"
+              @dblclick.stop="openDetail(node)"
             >
-              <circle r="46" />
-              <text class="node-ip-in-circle" text-anchor="middle" dominant-baseline="central">{{ node.ip }}</text>
+              <template v-if="node.type === 'switch'">
+                <rect x="-82" y="-38" width="164" height="76" rx="8" />
+                <text class="node-title" text-anchor="middle" y="-7">{{ node.label }}</text>
+                <text class="node-sub" text-anchor="middle" y="14">{{ node.ip }}</text>
+                <text class="node-sub" text-anchor="middle" y="32">{{ switchLinkCount(node.entity_id) }} links</text>
+              </template>
+              <template v-else>
+                <rect x="-84" y="-44" width="168" :height="serverBoxHeight(node)" rx="8" />
+                <text class="server-ip" text-anchor="middle" y="-15">{{ node.ip }}</text>
+                <text
+                  v-for="(line, index) in serverLinkLabels(node.entity_id)"
+                  :key="`${node.id}-line-${index}`"
+                  class="server-line"
+                  text-anchor="middle"
+                  :y="16 + index * 13"
+                >
+                  {{ line }}
+                </text>
+              </template>
             </g>
           </svg>
+        </div>
+
+        <div class="canvas-legend">
+          <span><i></i> 链路</span>
+          <span>滚轮缩放 · 按住拖拽 · 底部拖动条横向移动</span>
+        </div>
+        <div ref="scrollbarRef" class="canvas-scrollbar" @mousedown="onScrollbarMouseDown">
+          <div ref="thumbRef" class="canvas-thumb" @mousedown.stop="onThumbMouseDown"></div>
         </div>
         <el-empty v-if="!nodes.length" description="暂无拓扑数据" />
       </section>
 
-      <aside class="link-panel">
-        <div class="panel-title">链路结果</div>
-        <div v-if="links.length" class="link-list">
-          <button
-            v-for="link in links"
-            :key="link.id"
-            class="link-row"
-            :class="link.status"
+      <aside class="inspector-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">{{ selectedNodeTitle }}</div>
+            <div class="panel-subtitle">{{ selectedNodeSubtitle }}</div>
+          </div>
+          <el-button
+            v-if="selectedNode"
+            size="small"
+            @click="openDetail(selectedNode)"
           >
-            <span class="link-status">{{ statusText(link.status) }}</span>
-            <strong>{{ serverName(link.server_id) }}</strong>
-            <span>{{ link.server_interface }} / {{ link.server_mac }}</span>
-            <span>{{ switchName(link.switch_id) }} · {{ link.switch_interface || '未学习到端口' }}</span>
-            <small v-if="link.vlan">VLAN {{ link.vlan }}</small>
-            <small v-if="link.error">{{ link.error }}</small>
-          </button>
+            详情
+          </el-button>
         </div>
-        <el-empty v-else description="还没有发现记录" />
+
+        <div v-if="selectedRows.length" class="detail-list">
+          <div v-for="row in selectedRows" :key="row.id" class="detail-row">
+            <strong>{{ row.title }}</strong>
+            <span>{{ row.vlan }}</span>
+            <span>{{ row.description }}</span>
+          </div>
+        </div>
+        <el-empty v-else description="点击交换机或服务器查看接口详情" />
+
+        <div class="panel-footer">
+          <div class="footer-item">
+            <span>多链路服务器</span>
+            <strong>{{ multiLinkServerCount }}</strong>
+          </div>
+          <div class="footer-item">
+            <span>VLAN 数</span>
+            <strong>{{ vlanCount }}</strong>
+          </div>
+        </div>
       </aside>
     </div>
 
@@ -97,7 +117,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Connection, Refresh } from '@element-plus/icons-vue'
 import { topology as topologyApi } from '../api/index.js'
@@ -111,254 +131,383 @@ const discovering = ref(false)
 const nodes = ref([])
 const edges = ref([])
 const links = ref([])
+const selectedNodeId = ref(null)
 const activeServerId = ref(null)
 const activeSwitchId = ref(null)
 
-// 画布状态 — viewBox 直接控制
 const canvasRef = ref(null)
-const vbx = ref(0)    // viewBox x
-const vby = ref(0)    // viewBox y
-const vbw = ref(1400) // viewBox width
-const vbh = ref(800)  // viewBox height
+const scrollbarRef = ref(null)
+const thumbRef = ref(null)
+const view = ref({ x: 0, y: 0, w: 2200, h: 1040 })
+const world = ref({ width: 2200, height: 1040 })
 const isPanning = ref(false)
-const panStart = { x: 0, y: 0 }
-const panStartBox = { x: 0, y: 0 }
+const isDraggingThumb = ref(false)
+const panStart = { x: 0, y: 0, vx: 0, vy: 0 }
 
-const NODE_R = 46
-const COL_SWITCH_X = 220
-const COL_SERVER_X = 1180
-const TOP_PAD = 60
-const NODE_GAP = 90
-
-// 从 viewBox 推导 zoom（相对于基准宽度 1400）
-const zoom = computed(() => +(1400 / vbw.value).toFixed(2))
-
-const viewBoxStr = computed(() => `${vbx.value} ${vby.value} ${vbw.value} ${vbh.value}`)
+const SWITCH_GAP = 560
+const SWITCH_Y = 120
+const SERVER_START_Y = 310
+const SERVER_COL_GAP = 240
+const SERVER_ROW_GAP = 118
+const SERVER_COLS = 2
 
 const switchNodes = computed(() => nodes.value.filter(n => n.type === 'switch'))
 const serverNodes = computed(() => nodes.value.filter(n => n.type === 'server'))
-const foundEdges = computed(() => edges.value.filter(e => e.kind === 'discovered' && e.status === 'found'))
-const associationEdges = computed(() => edges.value.filter(e => e.kind === 'association'))
-
-/** 节点从顶部向下排布 */
-function verticalLayout(list, startX) {
-  const count = list.length
-  if (count === 0) return []
-  return list.map((node, i) => ({
-    ...node,
-    x: startX,
-    y: TOP_PAD + i * (NODE_R * 2 + NODE_GAP) + NODE_R,
-  }))
-}
-
-const positionedNodes = computed(() => {
-  return [
-    ...verticalLayout(switchNodes.value, COL_SWITCH_X),
-    ...verticalLayout(serverNodes.value, COL_SERVER_X),
-  ]
-})
+const foundLinks = computed(() => links.value.filter(link => link.status === 'found'))
+const viewBoxStr = computed(() => `${view.value.x} ${view.value.y} ${view.value.w} ${view.value.h}`)
+const isDefaultView = computed(() => view.value.x === 0 && view.value.y === 0 && view.value.w === world.value.width)
 
 const nodeMap = computed(() => {
+  const map = new Map()
+  nodes.value.forEach(node => map.set(node.id, node))
+  return map
+})
+
+const selectedNode = computed(() => nodeMap.value.get(selectedNodeId.value) || null)
+
+const serverPrimarySwitch = computed(() => {
+  const map = new Map()
+  for (const link of foundLinks.value) {
+    if (!map.has(link.server_id)) map.set(link.server_id, link.switch_id)
+  }
+  for (const edge of edges.value) {
+    if (edge.kind === 'association') {
+      const serverId = Number(String(edge.target).replace('server-', ''))
+      const switchId = Number(String(edge.source).replace('switch-', ''))
+      if (!map.has(serverId)) map.set(serverId, switchId)
+    }
+  }
+  return map
+})
+
+const linksByServer = computed(() => {
+  const map = new Map()
+  for (const link of foundLinks.value) {
+    if (!map.has(link.server_id)) map.set(link.server_id, [])
+    map.get(link.server_id).push(link)
+  }
+  return map
+})
+
+const linksBySwitch = computed(() => {
+  const map = new Map()
+  for (const link of foundLinks.value) {
+    if (!map.has(link.switch_id)) map.set(link.switch_id, [])
+    map.get(link.switch_id).push(link)
+  }
+  return map
+})
+
+const positionedSwitches = computed(() =>
+  switchNodes.value.map((node, index) => ({
+    ...node,
+    x: 245 + index * SWITCH_GAP,
+    y: SWITCH_Y,
+  }))
+)
+
+const positionedServers = computed(() => {
+  const switchIndex = new Map(positionedSwitches.value.map((node, index) => [node.entity_id, index]))
+  const grouped = new Map()
+  for (const server of serverNodes.value) {
+    const switchId = serverPrimarySwitch.value.get(server.entity_id)
+    if (!switchId) continue
+    if (!grouped.has(switchId)) grouped.set(switchId, [])
+    grouped.get(switchId).push(server)
+  }
+
+  const positioned = []
+  for (const [switchId, servers] of grouped.entries()) {
+    const index = switchIndex.get(switchId)
+    if (index == null) continue
+    const switchX = 245 + index * SWITCH_GAP
+    const startX = switchX - 120
+    servers
+      .slice()
+      .sort((a, b) => naturalCompare(a.ip, b.ip))
+      .forEach((server, serverIndex) => {
+        positioned.push({
+          ...server,
+          x: startX + (serverIndex % SERVER_COLS) * SERVER_COL_GAP,
+          y: SERVER_START_Y + Math.floor(serverIndex / SERVER_COLS) * SERVER_ROW_GAP,
+        })
+      })
+  }
+  return positioned
+})
+
+const positionedNodes = computed(() => {
+  const items = [...positionedSwitches.value, ...positionedServers.value]
+  return items.map(node => ({
+    ...node,
+    active: node.id === selectedNodeId.value,
+    related: isNodeRelated(node),
+  }))
+})
+
+const positionedNodeMap = computed(() => {
   const map = new Map()
   positionedNodes.value.forEach(node => map.set(node.id, node))
   return map
 })
 
-/** 计算圆边交点 */
-function circleEdge(cx, cy, tx, ty, radius) {
-  const dx = tx - cx
-  const dy = ty - cy
-  const len = Math.sqrt(dx * dx + dy * dy)
-  if (len === 0) return { x: cx, y: cy }
-  const ratio = radius / len
-  return { x: cx + dx * ratio, y: cy + dy * ratio }
-}
-
-const positionedEdges = computed(() => {
-  const r = NODE_R
-
-  // 统计同一对 (source, target) 的发现链路数量
-  const pairCount = {}
-  const pairIndex = {}
-  edges.value.forEach(edge => {
-    if (edge.status === 'not_found') return
-    if (edge.kind !== 'discovered') return
-    const key = `${edge.source}|${edge.target}`
-    if (!pairCount[key]) pairCount[key] = 0
-    pairCount[key]++
-  })
-  edges.value.forEach(edge => {
-    if (edge.status === 'not_found') return
-    if (edge.kind !== 'discovered') return
-    const key = `${edge.source}|${edge.target}`
-    if (!(key in pairIndex)) pairIndex[key] = 0
-    pairIndex[key]++
-  })
-
-  return edges.value
-    .map(edge => {
-      const source = nodeMap.value.get(edge.source)
-      const target = nodeMap.value.get(edge.target)
+const positionedEdges = computed(() =>
+  foundLinks.value
+    .map(link => {
+      const source = positionedNodeMap.value.get(`switch-${link.switch_id}`)
+      const target = positionedNodeMap.value.get(`server-${link.server_id}`)
       if (!source || !target) return null
-      if (edge.status === 'not_found') return null
-
-      // 计算偏移（仅 discovered 多线偏移，association 不偏移）
-      let offset = 0
-      if (edge.kind === 'discovered') {
-        const key = `${edge.source}|${edge.target}`
-        const total = pairCount[key] || 1
-        const idx = pairIndex[key]
-        if (pairIndex[key] !== undefined) pairIndex[key]--
-        offset = total > 1 ? (idx - (total + 1) / 2) * 28 : 0
-      }
-
-      // 从圆心算起，先算圆边交点
-      const sCenter = circleEdge(source.x, source.y, target.x, target.y, r)
-      const tCenter = circleEdge(target.x, target.y, source.x, source.y, r)
-
-      // 加上垂直偏移
-      const dx = target.x - source.x
-      const dy = target.y - source.y
-      const len = Math.sqrt(dx * dx + dy * dy)
-      const ux = len > 0 ? -dy / len : 0
-      const uy = len > 0 ? dx / len : 0
-
-      const sx = sCenter.x + ux * offset
-      const sy = sCenter.y + uy * offset
-      const tx = tCenter.x + ux * offset
-      const ty = tCenter.y + uy * offset
-
-      const mx = (sx + tx) / 2
-      const my = (sy + ty) / 2
-
+      const samePairLinks = foundLinks.value.filter(item =>
+        item.switch_id === link.switch_id && item.server_id === link.server_id
+      )
+      const pairIndex = samePairLinks.findIndex(item => item.id === link.id)
+      const offset = samePairLinks.length > 1 ? (pairIndex - (samePairLinks.length - 1) / 2) * 18 : 0
+      const sx = source.x
+      const sy = source.y + 38
+      const tx = target.x
+      const ty = target.y - 44
+      const midY = sy + 70 + offset
       return {
-        ...edge,
-        source, target,
-        sx, sy, tx, ty,
-        labelX: Math.round(mx),
-        labelY: Math.round(my),
-        pathD: `M${sx},${sy} L${tx},${ty}`,
+        ...link,
+        id: `link-${link.id}`,
+        source,
+        target,
+        active: selectedNodeId.value === source.id || selectedNodeId.value === target.id,
+        related: isLinkRelated(link),
+        pathD: `M${sx},${sy} C${sx},${midY} ${tx},${midY} ${tx},${ty}`,
       }
     })
     .filter(Boolean)
+)
+
+const selectedNodeTitle = computed(() => {
+  const node = selectedNode.value
+  if (!node) return '选择节点'
+  return node.type === 'server' ? node.ip : node.label
 })
 
-const entityNames = computed(() => {
-  const servers = new Map()
-  const switches = new Map()
-  nodes.value.forEach(node => {
-    if (node.type === 'server') servers.set(node.entity_id, node.ip)
-    if (node.type === 'switch') switches.set(node.entity_id, node.label || node.ip)
+const selectedNodeSubtitle = computed(() => {
+  const node = selectedNode.value
+  if (!node) return '点击交换机或服务器查看接口详情'
+  if (node.type === 'server') {
+    const rows = linksByServer.value.get(node.entity_id) || []
+    return `${rows.length} 条接口链路`
+  }
+  const rows = linksBySwitch.value.get(node.entity_id) || []
+  return `${node.ip} · ${rows.length} 条链路`
+})
+
+const selectedRows = computed(() => {
+  const node = selectedNode.value
+  if (!node) return []
+  const rows = node.type === 'server'
+    ? linksByServer.value.get(node.entity_id) || []
+    : linksBySwitch.value.get(node.entity_id) || []
+  return rows.map(link => {
+    const switchNode = nodeMap.value.get(`switch-${link.switch_id}`)
+    const serverNode = nodeMap.value.get(`server-${link.server_id}`)
+    return {
+      id: link.id,
+      title: node.type === 'server'
+        ? `${switchNode?.label || '交换机'} ${link.switch_interface || '-'} → ${link.server_interface || '-'}`
+        : `${link.switch_interface || '-'} → ${serverNode?.ip || '服务器'} ${link.server_interface || '-'}`,
+      vlan: link.vlan ? `VLAN ${link.vlan}` : 'VLAN -',
+      description: link.server_mac || '端口链路',
+    }
   })
-  return { servers, switches }
 })
 
-function edgeLabel(edge) {
-  if (edge.kind === 'association') return '关联'
-  if (edge.status === 'found') return `${edge.switch_interface || '端口'} / ${edge.server_interface}`
-  if (edge.status === 'error') return '查询失败'
-  return '未学习到'
+const multiLinkServerCount = computed(() =>
+  [...linksByServer.value.values()].filter(rows => rows.length > 1).length
+)
+
+const vlanCount = computed(() => {
+  const vlans = new Set(foundLinks.value.map(link => link.vlan).filter(Boolean))
+  return vlans.size
+})
+
+function naturalCompare(a, b) {
+  return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' })
 }
 
-function statusText(status) {
-  if (status === 'found') return '已链接'
-  if (status === 'error') return '失败'
-  return '未找到'
+function switchLinkCount(id) {
+  return (linksBySwitch.value.get(id) || []).length
 }
 
-function serverName(id) {
-  return entityNames.value.servers.get(id) || `服务器 #${id}`
+function serverLinkLabels(id) {
+  const rows = (linksByServer.value.get(id) || []).slice(0, 3)
+  if (!rows.length) return ['未发现端口']
+  return rows.map(link => {
+    const switchNode = nodeMap.value.get(`switch-${link.switch_id}`)
+    return `${switchNode?.label || 'SW'} ${link.switch_interface || '-'} ↔ ${link.server_interface || '-'}`
+  })
 }
 
-function switchName(id) {
-  return entityNames.value.switches.get(id) || `交换机 #${id}`
+function serverBoxHeight(node) {
+  const count = Math.max(1, Math.min(3, (linksByServer.value.get(node.entity_id) || []).length))
+  return count > 1 ? 100 : 82
 }
 
-function openNode(node) {
+function isLinkRelated(link) {
+  if (!selectedNodeId.value) return true
+  const selected = selectedNode.value
+  if (!selected) return true
+  if (selected.type === 'switch') return link.switch_id === selected.entity_id
+  return link.server_id === selected.entity_id
+}
+
+function isNodeRelated(node) {
+  if (!selectedNodeId.value) return true
+  const selected = selectedNode.value
+  if (!selected) return true
+  if (node.id === selected.id) return true
+  if (selected.type === 'switch') {
+    if (node.type === 'switch') return node.entity_id === selected.entity_id
+    return (linksBySwitch.value.get(selected.entity_id) || []).some(link => link.server_id === node.entity_id)
+  }
+  if (selected.type === 'server') {
+    if (node.type === 'server') return node.entity_id === selected.entity_id
+    return (linksByServer.value.get(selected.entity_id) || []).some(link => link.switch_id === node.entity_id)
+  }
+  return true
+}
+
+function selectNode(node) {
+  selectedNodeId.value = node.id
+}
+
+function openDetail(node) {
   if (node.type === 'server') activeServerId.value = node.entity_id
   if (node.type === 'switch') activeSwitchId.value = node.entity_id
 }
 
-// ── 画布拖拽平移（viewBox 直接偏移） ──
+function calcWorld() {
+  const width = Math.max(980, 500 + Math.max(switchNodes.value.length - 1, 0) * SWITCH_GAP)
+  let maxServerRows = 1
+  for (const switchNode of switchNodes.value) {
+    const count = serverNodes.value.filter(server =>
+      serverPrimarySwitch.value.get(server.entity_id) === switchNode.entity_id
+    ).length
+    maxServerRows = Math.max(maxServerRows, Math.ceil(count / SERVER_COLS))
+  }
+  const height = Math.max(760, SERVER_START_Y + maxServerRows * SERVER_ROW_GAP + 120)
+  world.value = { width, height }
+}
+
+function resetView() {
+  calcWorld()
+  view.value = { x: 0, y: 0, w: world.value.width, h: world.value.height }
+  nextTick(updateScrollbar)
+}
+
+function clampView() {
+  const current = view.value
+  current.w = Math.max(520, Math.min(world.value.width, current.w))
+  current.h = Math.max(360, Math.min(world.value.height, current.h))
+  current.x = Math.max(0, Math.min(world.value.width - current.w, current.x))
+  current.y = Math.max(0, Math.min(world.value.height - current.h, current.y))
+}
+
+function applyView() {
+  clampView()
+  view.value = { ...view.value }
+  nextTick(updateScrollbar)
+}
+
+function updateScrollbar() {
+  const scrollbar = scrollbarRef.value
+  const thumb = thumbRef.value
+  if (!scrollbar || !thumb) return
+  const rect = scrollbar.getBoundingClientRect()
+  const ratio = view.value.w / world.value.width
+  const thumbW = Math.max(54, rect.width * ratio)
+  const maxLeft = rect.width - thumbW
+  const left = world.value.width === view.value.w ? 0 : (view.value.x / (world.value.width - view.value.w)) * maxLeft
+  thumb.style.width = `${thumbW}px`
+  thumb.style.left = `${left}px`
+}
+
 function onCanvasMouseDown(event) {
   if (event.button !== 0) return
   isPanning.value = true
   panStart.x = event.clientX
   panStart.y = event.clientY
-  panStartBox.x = vbx.value
-  panStartBox.y = vby.value
+  panStart.vx = view.value.x
+  panStart.vy = view.value.y
 }
 
-function onCanvasMouseMove(event) {
-  if (!isPanning.value) return
-  // 鼠标拖拽方向与 viewBox 偏移方向一致
-  const container = canvasRef.value
-  if (!container) return
-  const rect = container.getBoundingClientRect()
-  // 像素到 viewBox 坐标的比例
-  const scaleX = vbw.value / rect.width
-  const scaleY = vbh.value / rect.height
-  vbx.value = panStartBox.x + (panStart.x - event.clientX) * scaleX
-  vby.value = panStartBox.y + (panStart.y - event.clientY) * scaleY
+function onWindowMouseMove(event) {
+  if (isPanning.value) {
+    const rect = canvasRef.value?.getBoundingClientRect()
+    if (!rect) return
+    view.value.x = panStart.vx + (panStart.x - event.clientX) * (view.value.w / rect.width)
+    view.value.y = panStart.vy + (panStart.y - event.clientY) * (view.value.h / rect.height)
+    applyView()
+  }
+  if (isDraggingThumb.value) {
+    const rect = scrollbarRef.value?.getBoundingClientRect()
+    const thumbRect = thumbRef.value?.getBoundingClientRect()
+    if (!rect || !thumbRect) return
+    const maxLeft = rect.width - thumbRect.width
+    const left = Math.max(0, Math.min(maxLeft, event.clientX - rect.left - thumbRect.width / 2))
+    view.value.x = maxLeft <= 0 ? 0 : (left / maxLeft) * (world.value.width - view.value.w)
+    applyView()
+  }
 }
 
-function onCanvasMouseUp() {
+function onWindowMouseUp() {
   isPanning.value = false
+  isDraggingThumb.value = false
 }
 
 function onCanvasWheel(event) {
-  const container = canvasRef.value
-  if (!container) return
-  const rect = container.getBoundingClientRect()
-  // 鼠标在 viewBox 坐标系中的位置
-  const mx = vbx.value + (event.clientX - rect.left) / rect.width * vbw.value
-  const my = vby.value + (event.clientY - rect.top) / rect.height * vbh.value
-
-  const factor = event.deltaY > 0 ? 1.2 : 1 / 1.2
-  const newW = Math.max(400, Math.min(8000, vbw.value * factor))
-  const newH = Math.max(300, Math.min(6000, vbh.value * factor))
-
-  // 保持鼠标位置不变
-  vbx.value = mx - (event.clientX - rect.left) / rect.width * newW
-  vby.value = my - (event.clientY - rect.top) / rect.height * newH
-  vbw.value = newW
-  vbh.value = newH
+  const rect = canvasRef.value?.getBoundingClientRect()
+  if (!rect) return
+  const mx = view.value.x + (event.clientX - rect.left) / rect.width * view.value.w
+  const my = view.value.y + (event.clientY - rect.top) / rect.height * view.value.h
+  const factor = event.deltaY > 0 ? 1.025 : 1 / 1.025
+  const newW = view.value.w * factor
+  const newH = view.value.h * factor
+  view.value.x = mx - (event.clientX - rect.left) / rect.width * newW
+  view.value.y = my - (event.clientY - rect.top) / rect.height * newH
+  view.value.w = newW
+  view.value.h = newH
+  applyView()
 }
 
-function resetView() {
-  vbx.value = 0
-  vby.value = 0
-  vbw.value = 1400
-  vbh.value = 800
+function onThumbMouseDown() {
+  isDraggingThumb.value = true
 }
 
-function calcSvgHeight() {
-  const maxCount = Math.max(switchNodes.value.length, serverNodes.value.length)
-  const h = TOP_PAD + maxCount * (NODE_R * 2 + NODE_GAP) + 80
-  return Math.max(800, h)
+function onScrollbarMouseDown(event) {
+  if (event.target === thumbRef.value) return
+  const rect = scrollbarRef.value?.getBoundingClientRect()
+  const thumbRect = thumbRef.value?.getBoundingClientRect()
+  if (!rect || !thumbRect) return
+  const maxLeft = rect.width - thumbRect.width
+  const left = Math.max(0, Math.min(maxLeft, event.clientX - rect.left - thumbRect.width / 2))
+  view.value.x = maxLeft <= 0 ? 0 : (left / maxLeft) * (world.value.width - view.value.w)
+  applyView()
 }
 
 function publishStats() {
   emit('stats', {
-    found: foundEdges.value.length,
+    found: foundLinks.value.length,
     pending: edges.value.filter(e => e.status !== 'found').length,
   })
 }
 
 async function loadTopology() {
   loading.value = true
-  resetView()
   try {
     const data = await topologyApi.get()
     nodes.value = data.nodes || []
     edges.value = data.edges || []
     links.value = data.links || []
-    // 根据节点数量动态调整 viewBox 高度
-    const h = calcSvgHeight()
-    vbw.value = 1400
-    vbh.value = h
-    vbx.value = 0
-    vby.value = 0
+    if (!selectedNodeId.value && nodes.value.length) {
+      selectedNodeId.value = switchNodes.value[0]?.id || serverNodes.value[0]?.id || null
+    }
+    resetView()
     publishStats()
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '加载拓扑失败')
@@ -380,7 +529,18 @@ async function discoverLinks() {
   }
 }
 
-onMounted(loadTopology)
+onMounted(() => {
+  window.addEventListener('mousemove', onWindowMouseMove)
+  window.addEventListener('mouseup', onWindowMouseUp)
+  window.addEventListener('resize', updateScrollbar)
+  loadTopology()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', onWindowMouseMove)
+  window.removeEventListener('mouseup', onWindowMouseUp)
+  window.removeEventListener('resize', updateScrollbar)
+})
 </script>
 
 <style scoped>
@@ -395,33 +555,31 @@ onMounted(loadTopology)
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-  margin-bottom: 2px;
 }
 
 .topology-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 14px;
-  min-height: 680px;
+  min-height: calc(100vh - 180px);
 }
 
 .topology-canvas,
-.link-panel {
+.inspector-panel {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
 
 .topology-canvas {
-  min-height: 680px;
+  min-height: calc(100vh - 180px);
   overflow: hidden;
   position: relative;
   cursor: grab;
   display: flex;
-  align-items: stretch;
 }
 
-.topology-canvas:active {
+.topology-canvas.dragging {
   cursor: grabbing;
 }
 
@@ -440,146 +598,210 @@ onMounted(loadTopology)
 }
 
 .topology-edge {
-  stroke: var(--text-muted);
-  stroke-width: 2;
-}
-
-.topology-edge.discovered.found {
+  fill: none;
   stroke: var(--online);
-  stroke-width: 3;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  opacity: 0.55;
 }
 
-.topology-edge.discovered.not_found,
-.topology-edge.discovered.error {
-  stroke: var(--warning);
-  stroke-dasharray: 8 8;
+.topology-edge.dim {
+  opacity: 0.08;
 }
 
-.topology-edge.association {
-  stroke-dasharray: 6 8;
-  opacity: 0.7;
-}
-
-.edge-label rect {
-  fill: var(--bg-surface);
-  stroke: var(--border);
-}
-
-.edge-label text {
-  fill: var(--text-secondary);
-  font-size: 12px;
+.topology-edge.active {
+  stroke-width: 3.4;
+  opacity: 1;
 }
 
 .topology-node {
   cursor: pointer;
 }
 
-.topology-node circle {
+.topology-node rect {
   fill: var(--bg-surface);
-  stroke: var(--aurora-green);
-  stroke-width: 2;
+  stroke: var(--border);
+  stroke-width: 1.5;
 }
 
-.topology-node.switch circle {
-  stroke: #58a6ff;
+.topology-node.switch rect {
+  stroke: var(--online);
+  fill: rgba(55, 216, 57, 0.08);
 }
 
-.topology-node.offline circle {
+.topology-node.active rect {
+  stroke: var(--online);
+  stroke-width: 3;
+}
+
+.topology-node.dim {
+  opacity: 0.26;
+}
+
+.topology-node.offline rect {
   stroke: var(--offline);
-  opacity: 0.75;
 }
 
-.node-ip-in-circle {
+.node-title {
   fill: var(--text-primary);
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 700;
 }
 
-.link-panel {
-  padding: 14px;
-  overflow: auto;
+.node-sub {
+  fill: var(--text-secondary);
+  font-size: 14px;
+}
+
+.server-ip {
+  fill: var(--text-primary);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.server-line {
+  fill: var(--text-secondary);
+  font-size: 13px;
+}
+
+.canvas-legend {
+  position: absolute;
+  left: 18px;
+  bottom: 34px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.canvas-legend i {
+  width: 30px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--online);
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.canvas-scrollbar {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.canvas-thumb {
+  position: absolute;
+  top: 2px;
+  height: 8px;
+  min-width: 54px;
+  border-radius: 999px;
+  background: var(--online);
+  cursor: grab;
+}
+
+.canvas-thumb:active {
+  cursor: grabbing;
+}
+
+.inspector-panel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 180px);
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-light);
 }
 
 .panel-title {
   color: var(--text-primary);
   font-weight: 700;
-  margin-bottom: 12px;
+  font-size: 17px;
 }
 
-.link-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.panel-subtitle {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 3px;
 }
 
-.link-row {
-  width: 100%;
+.detail-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  text-align: left;
-  color: var(--text-secondary);
+  gap: 9px;
+  margin-top: 14px;
+  overflow: auto;
+}
+
+.detail-row {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.link-row strong {
+.detail-row strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.detail-row span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.panel-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-light);
+}
+
+.footer-item {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-secondary);
+}
+
+.footer-item strong {
   color: var(--text-primary);
 }
 
-.link-row.found {
-  border-color: rgba(55, 216, 57, 0.45);
-}
-
-.link-row.error {
-  border-color: rgba(248, 81, 73, 0.45);
-}
-
-.link-status {
-  color: var(--aurora-green);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.link-row.not_found .link-status {
-  color: var(--warning);
-}
-
-.link-row.error .link-status {
-  color: var(--offline);
-}
-
-.link-row small {
-  color: var(--text-muted);
-}
-
-.legend {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.legend .legend-svg {
-  vertical-align: middle;
-  margin: 0 2px 0 6px;
-}
-
-.legend .legend-svg:first-of-type {
-  margin-left: 0;
-}
-
-@media (max-width: 1000px) {
+@media (max-width: 1100px) {
   .topology-layout {
     grid-template-columns: 1fr;
   }
 
-  .link-panel {
-    max-height: 340px;
+  .inspector-panel {
+    min-height: 420px;
   }
 }
 </style>

@@ -124,7 +124,7 @@ def get_topology(db: Session = Depends(get_db)):
             "online": server.is_online,
             "tags": server.tags,
             "occupied_by": server.occupied_by,
-            "assoc_count": len(switch.servers) if switch.servers else 0,
+            "assoc_count": len(server.switches) if server.switches else 0,
         })
 
     discovered = [
