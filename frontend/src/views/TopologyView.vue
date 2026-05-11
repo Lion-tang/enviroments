@@ -36,7 +36,7 @@
               :key="edge.id"
               :d="edge.pathD"
               class="topology-edge assoc-edge"
-              :class="{ dim: !edge.related }"
+              :class="{ dim: !edge.related, active: edge.active }"
             />
 
             <g
@@ -299,12 +299,14 @@ const positionedAssocEdges = computed(() =>
       const source = positionedNodeMap.value.get(edge.source)
       const target = positionedNodeMap.value.get(edge.target)
       if (!source || !target) return null
+      const sid = Number(String(edge.source).replace('switch-', ''))
+      const tid = Number(String(edge.target).replace('server-', ''))
       return {
         ...edge,
         source,
         target,
-        active: false,
-        related: isNodeRelated(source) && isNodeRelated(target),
+        active: selectedNodeId.value === edge.source || selectedNodeId.value === edge.target,
+        related: isAssocRelated(edge),
         pathD: makeEdgePath(source, target, 0),
       }
     })
@@ -724,6 +726,12 @@ onBeforeUnmount(() => {
   stroke-width: 2.2;
   stroke-dasharray: 6 4;
   opacity: 0.5;
+}
+
+.topology-edge.assoc-edge.active {
+  stroke-width: 3;
+  opacity: 1;
+  filter: drop-shadow(0 0 4px #409eff);
 }
 
 .topology-edge.assoc-edge.dim {
