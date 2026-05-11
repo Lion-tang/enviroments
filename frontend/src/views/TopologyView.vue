@@ -338,8 +338,7 @@ function serverLinkLabels(id) {
   const rows = (linksByServer.value.get(id) || []).slice(0, 3)
   if (!rows.length) return ['未发现端口']
   return rows.map(link => {
-    const switchNode = nodeMap.value.get(`switch-${link.switch_id}`)
-    return `${switchNode?.label || 'SW'} ${link.switch_interface || '-'} ↔ ${link.server_interface || '-'}`
+    return `${link.switch_interface || '-'} ↔ ${link.server_interface || '-'}`
   })
 }
 
@@ -402,8 +401,8 @@ function resetView() {
 
 function clampView() {
   const current = view.value
-  current.w = Math.max(520, Math.min(world.value.width, current.w))
-  current.h = Math.max(360, Math.min(world.value.height, current.h))
+  current.w = Math.max(520, current.w)
+  current.h = Math.max(360, current.h)
   current.x = Math.max(0, Math.min(world.value.width - current.w, current.x))
   current.y = Math.max(0, Math.min(world.value.height - current.h, current.y))
 }
