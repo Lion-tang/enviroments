@@ -729,9 +729,8 @@ onBeforeUnmount(() => {
 }
 
 .topology-edge.assoc-edge.active {
-  stroke-width: 3;
+  stroke-width: 2.5;
   opacity: 1;
-  filter: drop-shadow(0 0 4px #409eff);
 }
 
 .topology-edge.assoc-edge.dim {
