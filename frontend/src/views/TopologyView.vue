@@ -31,6 +31,13 @@
               class="topology-edge"
               :class="{ dim: !edge.related, active: edge.active }"
             />
+            <path
+              v-for="edge in positionedAssocEdges"
+              :key="edge.id"
+              :d="edge.pathD"
+              class="topology-edge assoc-edge"
+              :class="{ dim: !edge.related }"
+            />
 
             <g
               v-for="node in positionedNodes"
@@ -65,7 +72,8 @@
         </div>
 
         <div class="canvas-legend">
-          <span><i></i> 链路</span>
+          <span><i class="legend-found"></i> 已发现链路</span>
+          <span><i class="legend-assoc"></i> 已关联未发现</span>
           <span>滚轮缩放 · 按住拖拽 · 底部拖动条横向移动</span>
         </div>
         <div ref="scrollbarRef" class="canvas-scrollbar" @mousedown="onScrollbarMouseDown">
@@ -251,6 +259,15 @@ const positionedNodeMap = computed(() => {
   return map
 })
 
+function makeEdgePath(source, target, offsetY = 0) {
+  const sx = source.x
+  const sy = source.y + 38
+  const tx = target.x
+  const ty = target.y - 44
+  const midY = sy + 70 + offsetY
+  return `M${sx},${sy} C${sx},${midY} ${tx},${midY} ${tx},${ty}`
+}
+
 const positionedEdges = computed(() =>
   foundLinks.value
     .map(link => {
@@ -262,11 +279,6 @@ const positionedEdges = computed(() =>
       )
       const pairIndex = samePairLinks.findIndex(item => item.id === link.id)
       const offset = samePairLinks.length > 1 ? (pairIndex - (samePairLinks.length - 1) / 2) * 18 : 0
-      const sx = source.x
-      const sy = source.y + 38
-      const tx = target.x
-      const ty = target.y - 44
-      const midY = sy + 70 + offset
       return {
         ...link,
         id: `link-${link.id}`,
@@ -274,7 +286,26 @@ const positionedEdges = computed(() =>
         target,
         active: selectedNodeId.value === source.id || selectedNodeId.value === target.id,
         related: isLinkRelated(link),
-        pathD: `M${sx},${sy} C${sx},${midY} ${tx},${midY} ${tx},${ty}`,
+        pathD: makeEdgePath(source, target, offset),
+      }
+    })
+    .filter(Boolean)
+)
+
+const positionedAssocEdges = computed(() =>
+  edges.value
+    .filter(e => e.kind === 'association')
+    .map(edge => {
+      const source = positionedNodeMap.value.get(edge.source)
+      const target = positionedNodeMap.value.get(edge.target)
+      if (!source || !target) return null
+      return {
+        ...edge,
+        source,
+        target,
+        active: false,
+        related: isNodeRelated(source) && isNodeRelated(target),
+        pathD: makeEdgePath(source, target, 0),
       }
     })
     .filter(Boolean)
@@ -353,6 +384,16 @@ function isLinkRelated(link) {
   if (!selected) return true
   if (selected.type === 'switch') return link.switch_id === selected.entity_id
   return link.server_id === selected.entity_id
+}
+
+function isAssocRelated(edge) {
+  if (!selectedNodeId.value) return true
+  const selected = selectedNode.value
+  if (!selected) return true
+  const sid = Number(String(edge.source).replace('switch-', ''))
+  const tid = Number(String(edge.target).replace('server-', ''))
+  if (selected.type === 'switch') return sid === selected.entity_id
+  return tid === selected.entity_id
 }
 
 function isNodeRelated(node) {
@@ -678,6 +719,17 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.topology-edge.assoc-edge {
+  stroke: #409eff;
+  stroke-width: 2.2;
+  stroke-dasharray: 6 4;
+  opacity: 0.5;
+}
+
+.topology-edge.assoc-edge.dim {
+  opacity: 0.08;
+}
+
 .canvas-legend i {
   width: 30px;
   height: 3px;
@@ -686,6 +738,10 @@ onBeforeUnmount(() => {
   display: inline-block;
   margin-right: 6px;
   vertical-align: middle;
+}
+
+.canvas-legend i.legend-assoc {
+  background: #409eff;
 }
 
 .canvas-scrollbar {
