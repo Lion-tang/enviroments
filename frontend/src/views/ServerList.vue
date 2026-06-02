@@ -20,9 +20,28 @@
         {{ showFavoritesOnly ? '显示全部' : '只看收藏' }}
       </el-button>
     </div>
+    <div class="column-toggle-bar">
+      <span class="column-toggle-label">列显示</span>
+      <el-button
+        v-for="column in configurableColumns"
+        :key="column.key"
+        size="small"
+        :type="visibleColumns[column.key] ? 'primary' : 'default'"
+        plain
+        @click="toggleColumn(column.key)"
+      >
+        {{ column.label }}
+      </el-button>
+    </div>
 
     <!-- Server Table -->
-    <el-table :data="filteredServers" v-loading="loading" class="server-table" style="width: 100%; table-layout: fixed; overflow-x: auto">
+    <el-table
+      :data="filteredServers"
+      v-loading="loading"
+      border
+      class="server-table"
+      style="width: 100%; table-layout: fixed; overflow-x: auto"
+    >
       <el-table-column label="状态" min-width="80" align="center">
         <template #default="{ row }">
           <el-tag :type="row.is_online ? 'success' : 'danger'" size="small">
@@ -30,10 +49,10 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="ip" label="IP 地址" min-width="160" />
-      <el-table-column prop="cached_os_version" label="系统版本" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="cached_cpu_model" label="CPU 型号" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="tags" label="标签" min-width="160">
+      <el-table-column v-if="visibleColumns.ip" prop="ip" label="IP 地址" min-width="160" />
+      <el-table-column v-if="visibleColumns.os" prop="cached_os_version" label="系统版本" min-width="160" show-overflow-tooltip />
+      <el-table-column v-if="visibleColumns.cpu" prop="cached_cpu_model" label="CPU 型号" min-width="180" show-overflow-tooltip />
+      <el-table-column v-if="visibleColumns.tags" prop="tags" label="标签" min-width="160">
         <template #default="{ row }">
           <template v-if="editingTagsId === row.id">
             <el-input
@@ -51,7 +70,7 @@
           </template>
         </template>
       </el-table-column>
-      <el-table-column prop="description" label="备注" width="180" show-overflow-tooltip>
+      <el-table-column v-if="visibleColumns.description" prop="description" label="备注" width="180" show-overflow-tooltip>
         <template #default="{ row }">
           <template v-if="editingDescId === row.id">
             <el-input
@@ -73,7 +92,7 @@
           </template>
         </template>
       </el-table-column>
-      <el-table-column label="DPU" min-width="160" show-overflow-tooltip>
+      <el-table-column v-if="visibleColumns.dpu" label="DPU" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">
           <template v-if="editingDpuId === row.id">
             <el-input
@@ -91,10 +110,10 @@
           </template>
         </template>
       </el-table-column>
-      <el-table-column prop="bmc_ip" label="BMC IP" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="bmc_username" label="BMC 用户名" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="bmc_password" label="BMC 密码" min-width="120" show-overflow-tooltip />
-      <el-table-column label="使用人" min-width="150" align="center">
+      <el-table-column v-if="visibleColumns.bmcIp" prop="bmc_ip" label="BMC IP" min-width="150" show-overflow-tooltip />
+      <el-table-column v-if="visibleColumns.bmcUsername" prop="bmc_username" label="BMC 用户名" min-width="120" show-overflow-tooltip />
+      <el-table-column v-if="visibleColumns.bmcPassword" prop="bmc_password" label="BMC 密码" min-width="120" show-overflow-tooltip />
+      <el-table-column v-if="visibleColumns.occupiedBy" label="使用人" min-width="150" align="center">
         <template #default="{ row }">
           <div v-if="row.occupied_by" class="occupy-cell">
             <span class="occupy-info">
@@ -115,7 +134,7 @@
           <el-link v-else type="primary" @click="handleOccupy(row)">占用</el-link>
         </template>
       </el-table-column>
-      <el-table-column label="关联交换机" min-width="120" align="center">
+      <el-table-column v-if="visibleColumns.assocSwitch" label="关联交换机" min-width="120" align="center">
         <template #default="{ row }">
           <el-link type="primary" @click="openAssocDialog(row)">{{ row.assoc_switch_count ?? '—' }}</el-link>
         </template>
@@ -227,6 +246,42 @@ const activeServerId = ref(null)
 const searchQuery = ref('')
 const showFavoritesOnly = ref(false)
 const currentUsername = localStorage.getItem('username') || ''
+const columnStorageKey = 'server-list-visible-columns'
+const configurableColumns = [
+  { key: 'ip', label: 'IP 地址' },
+  { key: 'os', label: '系统版本' },
+  { key: 'cpu', label: 'CPU 型号' },
+  { key: 'tags', label: '标签' },
+  { key: 'description', label: '备注' },
+  { key: 'dpu', label: 'DPU' },
+  { key: 'bmcIp', label: 'BMC IP' },
+  { key: 'bmcUsername', label: 'BMC 用户名' },
+  { key: 'bmcPassword', label: 'BMC 密码' },
+  { key: 'occupiedBy', label: '使用人' },
+  { key: 'assocSwitch', label: '关联交换机' },
+]
+const defaultVisibleColumns = configurableColumns.reduce((acc, column) => {
+  acc[column.key] = true
+  return acc
+}, {})
+const visibleColumns = ref(loadVisibleColumns())
+
+function loadVisibleColumns() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(columnStorageKey) || '{}')
+    return { ...defaultVisibleColumns, ...saved }
+  } catch {
+    return { ...defaultVisibleColumns }
+  }
+}
+
+function toggleColumn(key) {
+  visibleColumns.value = {
+    ...visibleColumns.value,
+    [key]: !visibleColumns.value[key],
+  }
+  localStorage.setItem(columnStorageKey, JSON.stringify(visibleColumns.value))
+}
 
 const filteredServers = computed(() => {
   const source = showFavoritesOnly.value
@@ -563,6 +618,21 @@ onMounted(loadServers)
 .server-table {
   border-radius: 18px;
   --el-table-bg-color: transparent;
+}
+
+.column-toggle-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -2px 0 12px;
+}
+
+.column-toggle-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  margin-right: 2px;
 }
 
 .favorite-button {

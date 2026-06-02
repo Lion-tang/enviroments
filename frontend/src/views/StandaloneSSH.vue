@@ -22,11 +22,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onBeforeUnmount, onMounted } from 'vue'
 import WebTerminal from '../components/WebTerminal.vue'
 
 const ready = ref(false)
 const credentials = ref({ host: '', port: 22, username: '', password: '' })
+const previousTitle = document.title
 
 // Parse query params from hash URL like #/ssh/server/123/Label
 function parseSshRoute() {
@@ -68,6 +69,7 @@ async function fetchCredentials() {
       username: data.ssh_username,
       password: data.ssh_password,
     }
+    document.title = data.ip || targetLabel
   } catch (e) {
     console.error('Failed to fetch credentials:', e)
   }
@@ -79,7 +81,14 @@ function goBack() {
   window.location.href = '/'
 }
 
-onMounted(fetchCredentials)
+onMounted(() => {
+  document.title = targetLabel
+  fetchCredentials()
+})
+
+onBeforeUnmount(() => {
+  document.title = previousTitle || 'Enviroments'
+})
 </script>
 
 <style scoped>
