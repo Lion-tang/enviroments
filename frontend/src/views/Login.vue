@@ -100,7 +100,10 @@ async function doRegister() {
 <style scoped>
 .login-page {
   min-height: 100vh;
-  background: var(--bg-base);
+  background:
+    radial-gradient(circle at 16% 18%, rgba(255, 107, 157, 0.16), transparent 28%),
+    radial-gradient(circle at 84% 14%, rgba(255, 209, 102, 0.24), transparent 30%),
+    linear-gradient(180deg, #fff9f5 0%, #fff3eb 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -111,19 +114,30 @@ async function doRegister() {
 .login-page::before {
   content: '';
   position: absolute;
-  top: -50%;
-  left: -20%;
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(0, 180, 42, 0.08) 0%, transparent 70%);
+  top: 10%;
+  left: 8%;
+  width: 128px;
+  height: 128px;
+  background: rgba(255, 209, 102, 0.28);
+  border-radius: 50%;
+}
+
+.login-page::after {
+  content: '';
+  position: absolute;
+  right: 12%;
+  bottom: 16%;
+  width: 160px;
+  height: 160px;
+  background: rgba(255, 107, 157, 0.16);
   border-radius: 50%;
 }
 
 .login-card {
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 3px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 40px 36px;
+  padding: 42px 36px 36px;
   width: 380px;
   box-shadow: var(--shadow-lg);
   position: relative;
@@ -133,17 +147,26 @@ async function doRegister() {
 
 .login-logo {
   text-align: center;
-  font-size: 36px;
-  margin-bottom: 8px;
+  font-size: 34px;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 12px;
+  display: grid;
+  place-items: center;
+  background: var(--cream-strong);
+  border: 3px solid var(--border);
+  border-radius: 24px;
+  box-shadow: 5px 5px 0 rgba(255, 140, 66, 0.16);
 }
 
 .login-title {
   text-align: center;
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 800;
   color: var(--text-primary);
   margin-bottom: 4px;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
+  font-family: 'Nunito', 'Noto Sans SC', sans-serif;
 }
 
 .login-sub {
@@ -158,7 +181,6 @@ async function doRegister() {
 .auth-form :deep(.el-form-item) { margin-bottom: 14px; }
 
 .auth-form :deep(.el-input__wrapper) {
-  border-radius: var(--radius-md) !important;
   padding: 12px 16px !important;
 }
 
@@ -166,7 +188,6 @@ async function doRegister() {
   width: 100%;
   height: 42px;
   font-size: 15px;
-  border-radius: var(--radius-md) !important;
   margin-top: 4px;
 }
 </style>

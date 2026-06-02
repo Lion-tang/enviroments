@@ -589,12 +589,12 @@ onBeforeUnmount(() => {
 .topology-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
 }
 
 .topology-toolbar {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -602,15 +602,16 @@ onBeforeUnmount(() => {
 .topology-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 14px;
+  gap: 18px;
   min-height: calc(100vh - 180px);
 }
 
 .topology-canvas,
 .inspector-panel {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 3px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
 }
 
 .topology-canvas {
@@ -661,14 +662,15 @@ onBeforeUnmount(() => {
 }
 
 .topology-node rect {
-  fill: var(--bg-surface);
+  fill: #fff;
   stroke: var(--border);
-  stroke-width: 1.5;
+  stroke-width: 3;
+  rx: 18;
 }
 
 .topology-node.switch rect {
   stroke: var(--online);
-  fill: rgba(55, 216, 57, 0.08);
+  fill: rgba(0, 184, 148, 0.08);
 }
 
 .topology-node.active rect {
@@ -687,7 +689,7 @@ onBeforeUnmount(() => {
 .node-title {
   fill: var(--text-primary);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .node-sub {
@@ -698,7 +700,7 @@ onBeforeUnmount(() => {
 .server-ip {
   fill: var(--text-primary);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .server-line {
@@ -714,15 +716,15 @@ onBeforeUnmount(() => {
   gap: 12px;
   align-items: center;
   padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
   background: var(--bg-surface);
   color: var(--text-secondary);
   font-size: 12px;
 }
 
 .topology-edge.assoc-edge {
-  stroke: #409eff;
+  stroke: var(--sky);
   stroke-width: 2.2;
   stroke-dasharray: 6 4;
   opacity: 0.5;
@@ -748,7 +750,7 @@ onBeforeUnmount(() => {
 }
 
 .canvas-legend i.legend-assoc {
-  background: #409eff;
+  background: var(--sky);
 }
 
 .canvas-scrollbar {
@@ -758,8 +760,8 @@ onBeforeUnmount(() => {
   bottom: 14px;
   height: 14px;
   border-radius: 999px;
-  background: var(--border);
-  border: 1px solid var(--border);
+  background: var(--cream-strong);
+  border: 2px solid var(--border);
   cursor: pointer;
 }
 
@@ -769,7 +771,7 @@ onBeforeUnmount(() => {
   height: 8px;
   min-width: 54px;
   border-radius: 999px;
-  background: var(--online);
+  background: var(--accent);
   cursor: grab;
 }
 
@@ -791,13 +793,13 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 12px;
   padding-bottom: 14px;
-  border-bottom: 1px solid var(--border-light);
+  border-bottom: 2px solid var(--border-light);
 }
 
 .panel-title {
   color: var(--text-primary);
-  font-weight: 700;
-  font-size: 17px;
+  font-weight: 800;
+  font-size: 19px;
 }
 
 .panel-subtitle {
@@ -815,10 +817,10 @@ onBeforeUnmount(() => {
 }
 
 .detail-row {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px;
+  background: #fffaf6;
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -840,14 +842,14 @@ onBeforeUnmount(() => {
   gap: 10px;
   margin-top: auto;
   padding-top: 14px;
-  border-top: 1px solid var(--border-light);
+  border-top: 2px solid var(--border-light);
 }
 
 .footer-item {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px;
+  background: #fffaf6;
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  padding: 12px;
   display: flex;
   justify-content: space-between;
   color: var(--text-secondary);

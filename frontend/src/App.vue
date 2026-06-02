@@ -228,7 +228,10 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
 .app-shell {
   display: flex;
   min-height: 100vh;
-  background: var(--bg-base);
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 107, 157, 0.12), transparent 26%),
+    radial-gradient(circle at 86% 18%, rgba(255, 209, 102, 0.22), transparent 28%),
+    var(--bg-base);
 }
 
 /* ─── Sidebar ──────────────────────────────────────────────────────────────── */
@@ -236,8 +239,8 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
 .sidebar {
   width: 220px;
   min-height: 100vh;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--border);
+  background: rgba(255, 249, 245, 0.94);
+  border-right: 3px solid var(--border);
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -247,6 +250,7 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
   z-index: 10;
   transition: width 0.25s ease;
   overflow: hidden;
+  backdrop-filter: blur(14px);
 }
 
 .sidebar.collapsed {
@@ -258,32 +262,35 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
   align-items: center;
   gap: 10px;
   padding: 20px 14px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid var(--border);
   min-height: 64px;
   overflow: hidden;
 }
 
 .collapse-btn {
   font-size: 16px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
+  background: #fff;
+  border: 2px solid var(--border);
+  color: var(--accent);
   cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
   transition: var(--transition);
   flex-shrink: 0;
   line-height: 1;
+  font-weight: 800;
 }
-.collapse-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.collapse-btn:hover { color: #fff; background: var(--accent); transform: rotate(-6deg); }
 
 .logo-icon { font-size: 22px; }
 
 .logo-text {
   font-size: 17px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
+  font-family: 'Nunito', 'Noto Sans SC', sans-serif;
 }
 
 /* Nav */
@@ -300,8 +307,8 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: var(--radius-md);
-  border: none;
+  border-radius: 999px;
+  border: 2px solid transparent;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -314,26 +321,21 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
 }
 
 .nav-item:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: #fff;
+  border-color: var(--border);
+  color: var(--accent);
 }
 
 .nav-item.active {
-  background: var(--accent-glow);
-  color: var(--accent);
-  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 800;
+  box-shadow: 4px 4px 0 rgba(255, 140, 66, 0.2);
 }
 
 .nav-item.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 20px;
-  background: var(--accent);
-  border-radius: 0 2px 2px 0;
+  content: none;
 }
 
 .nav-icon { font-size: 16px; }
@@ -350,7 +352,7 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
 
 /* Footer */
 .sidebar-footer {
-  border-top: 1px solid var(--border);
+  border-top: 2px solid var(--border);
   padding: 14px;
 }
 
@@ -358,6 +360,10 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
   display: flex;
   align-items: center;
   gap: 10px;
+  background: #fff;
+  border: 2px solid var(--border);
+  border-radius: 20px;
+  padding: 10px;
 }
 
 .user-avatar { font-size: 22px; }
@@ -371,7 +377,7 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
 
 .user-name {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 800;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -384,17 +390,18 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
 }
 
 .logout-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
+  background: var(--cream-strong);
+  border: 2px solid var(--border);
+  color: var(--accent);
   cursor: pointer;
   font-size: 14px;
-  padding: 4px;
-  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
   transition: var(--transition);
 }
 
-.logout-btn:hover { color: var(--offline); background: var(--bg-hover); }
+.logout-btn:hover { color: #fff; background: var(--offline); border-color: var(--offline); }
 
 /* ─── Main Area ────────────────────────────────────────────────────────────── */
 
@@ -413,11 +420,12 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
   align-items: center;
   justify-content: space-between;
   padding: 18px 28px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-surface);
+  border-bottom: 3px solid var(--border);
+  background: rgba(255, 249, 245, 0.92);
   position: sticky;
   top: 0;
   z-index: 5;
+  backdrop-filter: blur(14px);
 }
 
 .topbar-title {
@@ -427,8 +435,8 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
 }
 
 .topbar-title h1 {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 800;
   color: var(--text-primary);
 }
 
@@ -446,12 +454,13 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
-  border-radius: 20px;
+  padding: 7px 14px;
+  border-radius: 999px;
   font-size: 13px;
   color: var(--text-secondary);
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
+  font-weight: 700;
 }
 
 .stat-chip strong { color: var(--text-primary); font-weight: 600; }
@@ -467,16 +476,18 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
 
 .theme-toggle {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 5px 12px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  width: 40px;
+  height: 34px;
+  padding: 0;
   font-size: 16px;
   cursor: pointer;
   transition: var(--transition);
   display: flex;
   align-items: center;
 }
-.theme-toggle:hover { background: var(--bg-hover); transform: scale(1.05); }
+.theme-toggle:hover { background: var(--bg-hover); transform: rotate(6deg); }
 
 /* Content */
 .content {

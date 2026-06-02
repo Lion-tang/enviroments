@@ -223,11 +223,12 @@ watch(() => props.serverId, (id) => {
   gap: 8px;
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: #f5f7fa;
-  border-radius: 6px;
+  background: var(--cream-strong);
+  border: 2px solid var(--border);
+  border-radius: 18px;
   font-size: 13px;
 }
-.path-label { color: #666; font-weight: 500; }
+.path-label { color: var(--text-secondary); font-weight: 800; }
 .toolbar {
   display: flex;
   gap: 8px;

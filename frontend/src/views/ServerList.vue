@@ -546,48 +546,55 @@ onMounted(loadServers)
   gap: 12px;
   margin-bottom: 20px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
-.toolbar .el-input { --el-input-bg-color: var(--bg-surface); }
+.toolbar .el-input { --el-input-bg-color: #fff; }
 
 .server-card {
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 3px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  padding: 16px;
+  padding: 18px;
+  box-shadow: var(--shadow-md);
 }
 
 .server-table {
-  border-radius: 0;
+  border-radius: 18px;
   --el-table-bg-color: transparent;
 }
 
 .favorite-button {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
+  border: 2px solid var(--border);
+  background: #fffaf6;
+  color: #c9a391;
   cursor: pointer;
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
-  padding: 0 4px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
   transition: var(--transition);
 }
 .favorite-button.active,
 .favorite-button:hover {
-  color: #e3b341;
+  color: #f6a623;
+  background: #fff3d5;
+  transform: rotate(-8deg) scale(1.04);
 }
 
 .tags-cell {
   cursor: pointer;
   color: var(--text-secondary);
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
   transition: var(--transition);
+  font-weight: 700;
 }
 .tags-cell:hover {
-  background: var(--accent-glow);
-  color: var(--accent);
+  background: var(--cream-strong);
+  color: var(--orange-dark);
 }
 
 .desc-cell {
@@ -614,7 +621,7 @@ onMounted(loadServers)
   min-width: 0;
   line-height: 1.15;
 }
-.occupied-by { color: var(--warning); font-weight: 500; }
+.occupied-by { color: var(--warning); font-weight: 800; }
 .occupied-at {
   margin-top: 2px;
   color: var(--text-muted);

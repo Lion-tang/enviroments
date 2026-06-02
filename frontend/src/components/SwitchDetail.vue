@@ -244,7 +244,7 @@ function logClass(log) {
 .detail-actions { display: flex; gap: 8px; margin-top: 16px; }
 
 .log-toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
-.log-container { border: 1px solid var(--border); border-radius: 6px; max-height: 400px; overflow-y: auto; }
+.log-container { border: 2px solid var(--border); border-radius: 18px; max-height: 400px; overflow-y: auto; background: #fff; }
 .log-empty { padding: 24px; text-align: center; color: var(--text-muted); }
 .log-list { font-family: 'Consolas', monospace; font-size: 12px; }
 .log-line { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--border-light); flex-wrap: wrap; }
@@ -252,7 +252,7 @@ function logClass(log) {
 .log-offline-row { background: rgba(248, 81, 73, 0.08); }
 .log-error-row { background: rgba(248, 81, 73, 0.05); }
 .log-time { color: var(--text-muted); white-space: nowrap; }
-.log-type { color: var(--accent); font-weight: 500; }
+.log-type { color: var(--orange-dark); font-weight: 800; }
 .log-status { font-size: 12px; }
 .log-status.online { color: var(--online); }
 .log-status.offline { color: var(--offline); }

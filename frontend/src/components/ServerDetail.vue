@@ -1054,7 +1054,7 @@ function logInterfaces(log) {
 }
 
 .breadcrumb-seg:hover {
-  background: var(--accent-glow);
+  background: var(--cream-strong);
   text-decoration: underline;
 }
 
@@ -1096,16 +1096,16 @@ function logInterfaces(log) {
   margin-top: 8px;
   padding: 10px 12px;
   padding-bottom: max(10px, env(safe-area-inset-bottom));
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 2px solid var(--border);
+  border-radius: 18px;
   background: var(--bg-card);
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow-md);
 }
 
 .dir-name {
-  color: var(--accent);
-  font-weight: 500;
+  color: var(--orange-dark);
+  font-weight: 800;
 }
 
 .file-name {
@@ -1132,8 +1132,8 @@ function logInterfaces(log) {
   align-items: center;
   justify-content: space-between;
   padding: 8px 10px;
-  border-radius: 6px;
-  background: var(--bg-hover);
+  border-radius: 18px;
+  background: var(--cream-strong);
   color: var(--text-primary);
   font-size: 13px;
 }
@@ -1146,7 +1146,7 @@ function logInterfaces(log) {
 }
 
 .upload-progress-label {
-  font-weight: 500;
+  font-weight: 800;
 }
 
 .upload-progress-file {
@@ -1159,7 +1159,7 @@ function logInterfaces(log) {
 }
 
 .upload-progress-count {
-  color: var(--accent);
+  color: var(--orange-dark);
   font-variant-numeric: tabular-nums;
   margin-left: 12px;
   white-space: nowrap;
@@ -1175,10 +1175,10 @@ function logInterfaces(log) {
 .drop-overlay {
   margin-top: 10px;
   padding: 18px 16px;
-  border: 1px dashed var(--accent);
-  border-radius: 8px;
-  background: var(--accent-glow);
-  color: var(--accent);
+  border: 2px dashed var(--accent);
+  border-radius: 18px;
+  background: var(--cream-strong);
+  color: var(--orange-dark);
   text-align: center;
   font-size: 13px;
 }
@@ -1192,9 +1192,9 @@ function logInterfaces(log) {
 .detail-note-panel {
   margin-top: 16px;
   padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface);
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  background: #fffaf6;
 }
 
 .detail-note-header {
@@ -1203,7 +1203,7 @@ function logInterfaces(log) {
   align-items: center;
   margin-bottom: 8px;
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .log-toolbar {
@@ -1213,10 +1213,11 @@ function logInterfaces(log) {
 }
 
 .log-container {
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 2px solid var(--border);
+  border-radius: 18px;
   max-height: 400px;
   overflow-y: auto;
+  background: #fff;
 }
 
 .log-empty {

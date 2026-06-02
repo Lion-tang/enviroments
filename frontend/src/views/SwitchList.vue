@@ -342,17 +342,18 @@ onMounted(load)
 <style scoped>
 .toolbar {
   display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 20px;
   align-items: center;
   flex-wrap: wrap;
 }
 
 .switch-card {
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 3px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 16px;
+  padding: 18px;
+  box-shadow: var(--shadow-md);
 }
 
 .tags-cell {
@@ -361,6 +362,14 @@ onMounted(load)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+  transition: var(--transition);
 }
-.tags-cell:hover { color: var(--accent); }
+.tags-cell:hover {
+  color: var(--orange-dark);
+  background: var(--cream-strong);
+}
 </style>
