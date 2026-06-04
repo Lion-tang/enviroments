@@ -42,7 +42,7 @@ def _update_server_by_id(db, server_id: int, values: dict) -> bool:
         raise
 
 
-async def status_check_task(app):
+def status_check_task(app):
     """Ping all servers, update online status, write JSON log lines."""
     db = SessionLocal()
     try:
@@ -84,7 +84,7 @@ async def status_check_task(app):
         db.close()
 
 
-async def detail_fetch_task(app):
+def detail_fetch_task(app):
     """SSH fetch full server info, cache and write JSON log lines."""
     db = SessionLocal()
     try:
@@ -188,7 +188,7 @@ def _topo_upsert_link(
     return link
 
 
-async def topology_discovery_task(app):
+def topology_discovery_task(app):
     """SSH discover network topology: match server interfaces to switch MAC tables."""
     db = SessionLocal()
     try:
@@ -323,6 +323,8 @@ def create_scheduler(app) -> AsyncIOScheduler:
         id="status_check",
         name="Server Status Check (every 5 min)",
         replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
 
     scheduler.add_job(
@@ -332,6 +334,8 @@ def create_scheduler(app) -> AsyncIOScheduler:
         id="detail_fetch",
         name="Server Detail Fetch (every 30 min)",
         replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
 
     scheduler.add_job(
@@ -341,6 +345,8 @@ def create_scheduler(app) -> AsyncIOScheduler:
         id="topology_discovery",
         name="Topology Discovery (every 30 min)",
         replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
 
     return scheduler

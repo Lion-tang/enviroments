@@ -15,6 +15,8 @@
 - 日志系统：按服务器/交换机写入 JSON 行日志，前端详情页可查看、刷新和清空。
 - Windows EXE 与 Linux tar.gz 打包：GitHub Actions 和本地脚本均可构建。
 
+第一次使用可先阅读 `docs/GETTING_STARTED.md`，按步骤完成注册、添加服务器/交换机、Web SSH 和组网图体验。
+
 ## 项目结构
 
 ```text
@@ -40,7 +42,7 @@ enviroments/
 │  ├─ package.json
 │  └─ pnpm-lock.yaml
 ├─ .github/workflows/      build.yml build-linux.yml
-├─ docs/                   README_DEPLOY_LINUX.md
+├─ docs/                   GETTING_STARTED.md README_DEPLOY_LINUX.md
 ├─ build.bat               Windows 本地打包脚本
 ├─ build.sh                Linux/macOS 本地打包脚本
 └─ README.md
@@ -204,4 +206,3 @@ https://github.com/xxjunzijun/enviroments
 https://github.com/huashengdun/webssh
 
 原项目采用 MIT License。相关代码已按本项目 FastAPI、WebSocket、Paramiko 架构进行适配。更详细的第三方声明见 `THIRD_PARTY_NOTICES.md`。
-
