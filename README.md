@@ -17,6 +17,132 @@
 
 第一次使用可先阅读 `docs/GETTING_STARTED.md`，按步骤完成注册、添加服务器/交换机、Web SSH 和组网图体验。
 
+## 快速上手
+
+下面流程适合第一次下载代码后，在本机安装依赖、启动开发环境，并一键构建出可运行版本。
+
+### 1. 准备环境
+
+需要先安装：
+
+- Python 3.11 或更新版本
+- Node.js 20
+- pnpm 10
+
+如果本机还没有 pnpm，可以通过 npm 安装：
+
+```bash
+npm install -g pnpm
+```
+
+### 2. 下载代码
+
+```bash
+git clone https://github.com/xxjunzijun/enviroments.git
+cd enviroments
+```
+
+### 3. 安装后端依赖
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cd ..
+```
+
+Windows PowerShell 可使用：
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cd ..
+```
+
+### 4. 安装前端依赖
+
+```bash
+cd frontend
+pnpm install
+cd ..
+```
+
+### 5. 启动开发环境
+
+开两个终端。
+
+后端：
+
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+前端：
+
+```bash
+cd frontend
+pnpm run dev
+```
+
+然后打开：
+
+```text
+http://localhost:3000
+```
+
+### 6. 一键构建出版本
+
+构建前先安装 PyInstaller：
+
+```bash
+cd backend
+source .venv/bin/activate
+pip install pyinstaller
+cd ..
+```
+
+Linux/macOS：
+
+```bash
+chmod +x build.sh
+./build.sh
+```
+
+Windows：
+
+```bat
+build.bat
+```
+
+构建成功后，产物会生成到：
+
+```text
+dist/Enviroments/
+```
+
+运行方式：
+
+```bash
+./dist/Enviroments/Enviroments
+```
+
+Windows：
+
+```bat
+dist\Enviroments\Enviroments.exe
+```
+
+运行后打开：
+
+```text
+http://127.0.0.1:8000
+```
+
 ## 项目结构
 
 ```text
@@ -41,7 +167,7 @@ enviroments/
 │  ├─ dist/                前端构建产物，由后端静态托管
 │  ├─ package.json
 │  └─ pnpm-lock.yaml
-├─ .github/workflows/      build.yml build-linux.yml
+├─ .github/workflows/      build.yml build-linux.yml build-linux-x86.yml
 ├─ docs/                   GETTING_STARTED.md README_DEPLOY_LINUX.md
 ├─ build.bat               Windows 本地打包脚本
 ├─ build.sh                Linux/macOS 本地打包脚本
@@ -70,7 +196,7 @@ pnpm run dev
 
 前端开发地址：`http://localhost:3000`
 
-开发模式下，Vite 会把 `/api` 和 `/ws` 代理到 `http://localhost:8000`。
+开发模式下，Vite 会把 `/api` 和 `/ws` 代理到 `http://localhost:8000`；Web SSH 使用的 WebSocket 也会经由 `/api` 代理转发到后端。
 
 ## 生产构建
 
@@ -86,7 +212,15 @@ pnpm run build
 
 ### Windows EXE
 
-先确认已安装 Python、Node.js、pnpm，并能安装 Python 依赖：
+先确认已安装 Python、Node.js、pnpm，并且当前 Python 环境已经安装 `backend/requirements.txt` 和 `pyinstaller`：
+
+```bat
+cd backend
+pip install -r requirements.txt pyinstaller
+cd ..
+```
+
+然后执行：
 
 ```bat
 build.bat
@@ -127,7 +261,7 @@ chmod +x build.sh
 ./build.sh
 ```
 
-输出目录为 `dist/Enviroments/`。当前 GitHub Actions 目标是 Windows x64，本地 Linux/macOS 打包主要用于开发验证。
+输出目录为 `dist/Enviroments/`。这个脚本会在当前机器架构上打包，适合本机验证或在目标 Linux/macOS 环境中生成对应平台产物；跨平台发布建议使用对应的 GitHub Actions 工作流。
 
 ## GitHub Actions 构建
 
