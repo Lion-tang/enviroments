@@ -35,7 +35,7 @@ export const auth = {
 }
 
 export const servers = {
-  list: () => api.get('/servers').then(r => r.data),
+  list: () => api.get('/servers', { params: { compact: true } }).then(r => r.data),
 
   get: (id) => api.get(`/servers/${id}`).then(r => r.data),
 
@@ -46,6 +46,9 @@ export const servers = {
   delete: (id) => api.delete(`/servers/${id}`),
 
   checkStatus: (id) => api.get(`/servers/${id}/status`).then(r => r.data),
+
+  checkStatusBatch: (serverIds = null) =>
+    api.post('/servers/status/batch', { server_ids: serverIds }).then(r => r.data),
 
   fetchDetail: (id, refresh = false) =>
     api.get(`/servers/${id}/detail`, { params: { refresh } }).then(r => r.data),
@@ -66,8 +69,30 @@ export const files = {
 
   downloadUrl: (serverId, path) => `/api/v1/servers/${serverId}/files/download?path=${encodeURIComponent(path)}`,
 
-  upload: (serverId, path, base64Content, config = {}) =>
-    api.post(`/servers/${serverId}/files`, { path, content: base64Content }, config).then(r => r.data),
+  download: (serverId, path) =>
+    api.get(`/servers/${serverId}/files/download`, {
+      params: { path },
+      responseType: 'blob',
+      timeout: 0,
+    }).then(r => r.data),
+
+  upload: (serverId, path, content, config = {}) => {
+    if (content instanceof Blob) {
+      const form = new FormData()
+      form.append('path', path)
+      form.append('file', content, content.name || 'upload.bin')
+      return api.post(
+        `/servers/${serverId}/files/upload`,
+        form,
+        { timeout: 0, ...config },
+      ).then(r => r.data)
+    }
+    return api.post(
+      `/servers/${serverId}/files`,
+      { path, content },
+      { timeout: 0, ...config },
+    ).then(r => r.data)
+  },
 
   mkdir: (serverId, path, config = {}) =>
     api.post(`/servers/${serverId}/files/mkdir`, { path }, config).then(r => r.data),
@@ -124,5 +149,5 @@ export const topology = {
   get: () => api.get('/topology').then(r => r.data),
 
   discover: (serverIds = null) =>
-    api.post('/topology/discover', { server_ids: serverIds }, { timeout: 120000 }).then(r => r.data),
+    api.post('/topology/discover', { server_ids: serverIds }, { timeout: 300000 }).then(r => r.data),
 }

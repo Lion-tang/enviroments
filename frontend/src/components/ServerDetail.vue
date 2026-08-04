@@ -386,7 +386,7 @@ const pathInputRef = ref(null)
 const selectedFile = ref(null)
 const uploadDialogVisible = ref(false)
 const uploadRemotePath = ref('')
-const uploadFileBase64 = ref(null)
+const uploadFile = ref(null)
 const uploadFileName = ref('')
 const uploading = ref(false)
 const dragOverActive = ref(false)
@@ -617,12 +617,18 @@ function onRowDblClick(row) {
   downloadFile(row.path)
 }
 
-function downloadFile(path) {
-  const url = filesApi.downloadUrl(props.serverId, path)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = path.split('/').pop()
-  anchor.click()
+async function downloadFile(path) {
+  try {
+    const blob = await filesApi.download(props.serverId, path)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = path.split('/').pop()
+    anchor.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (e) {
+    ElMessage.error(`${text.download}: ${e.response?.data?.detail || e.message}`)
+  }
 }
 
 function downloadSelected() {
@@ -640,7 +646,7 @@ watch(activeTab, (tab) => {
 
 function showUploadDialog() {
   uploadRemotePath.value = currentPath.value === '/' ? '/' : `${currentPath.value}/`
-  uploadFileBase64.value = null
+  uploadFile.value = null
   uploadFileName.value = ''
   uploadDialogVisible.value = true
 }
@@ -653,14 +659,9 @@ function onFileSelected(event) {
 
 function prepareUploadFile(file, remotePath = null) {
   uploadFileName.value = file.name
-  uploadFileBase64.value = null
+  uploadFile.value = file
   const baseName = file.name.replace(/\\/g, '/').split('/').pop()
   uploadRemotePath.value = remotePath || `${currentPath.value === '/' ? '' : currentPath.value}/${baseName}`
-  const reader = new FileReader()
-  reader.onload = (event) => {
-    uploadFileBase64.value = event.target.result.split(',')[1]
-  }
-  reader.readAsDataURL(file)
 }
 
 function beginUploadProgress(label, total) {
@@ -714,17 +715,8 @@ function ensureUploadNotCanceled() {
   }
 }
 
-function readFileAsBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = (event) => resolve(event.target.result.split(',')[1])
-    reader.onerror = () => reject(new Error(text.readFileFailed))
-    reader.readAsDataURL(file)
-  })
-}
-
 async function doUpload() {
-  if (!uploadFileBase64.value) {
+  if (!uploadFile.value) {
     ElMessage.warning(text.chooseFileFirst)
     return
   }
@@ -733,7 +725,7 @@ async function doUpload() {
   updateUploadProgress(0, uploadFileName.value || uploadRemotePath.value.split('/').pop() || '')
   ElMessage.info(text.fileUploadPreparing)
   try {
-    await filesApi.upload(props.serverId, uploadRemotePath.value, uploadFileBase64.value, getUploadRequestConfig())
+    await filesApi.upload(props.serverId, uploadRemotePath.value, uploadFile.value, getUploadRequestConfig())
     updateUploadProgress(1, uploadFileName.value || uploadRemotePath.value.split('/').pop() || '')
     uploadDialogVisible.value = false
     await refresh()
@@ -806,9 +798,8 @@ async function uploadDroppedFile(file) {
   updateUploadProgress(0, file.name)
   ElMessage.info(text.fileUploadPreparing)
   try {
-    const content = await readFileAsBase64(file)
     ensureUploadNotCanceled()
-    await filesApi.upload(props.serverId, remotePath, content, getUploadRequestConfig())
+    await filesApi.upload(props.serverId, remotePath, file, getUploadRequestConfig())
     updateUploadProgress(1, file.name)
     await refresh()
     ElMessage.success(text.uploadSuccess)
@@ -852,12 +843,11 @@ async function uploadDroppedDirectory(items) {
     for (const item of files) {
       ensureUploadNotCanceled()
       updateUploadProgress(completed, item.relativePath)
-      const content = await readFileAsBase64(item.file)
       ensureUploadNotCanceled()
       await filesApi.upload(
         props.serverId,
         joinRemotePath(currentPath.value, item.relativePath),
-        content,
+        item.file,
         getUploadRequestConfig(),
       )
       completed += 1

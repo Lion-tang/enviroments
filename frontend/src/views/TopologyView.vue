@@ -206,6 +206,23 @@ const linksBySwitch = computed(() => {
   return map
 })
 
+const linkPairMeta = computed(() => {
+  const groups = new Map()
+  for (const link of foundLinks.value) {
+    const key = `${link.switch_id}:${link.server_id}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(link.id)
+  }
+
+  const meta = new Map()
+  for (const ids of groups.values()) {
+    ids.forEach((id, index) => {
+      meta.set(id, { index, count: ids.length })
+    })
+  }
+  return meta
+})
+
 const positionedSwitches = computed(() =>
   switchNodes.value.map((node, index) => ({
     ...node,
@@ -274,11 +291,8 @@ const positionedEdges = computed(() =>
       const source = positionedNodeMap.value.get(`switch-${link.switch_id}`)
       const target = positionedNodeMap.value.get(`server-${link.server_id}`)
       if (!source || !target) return null
-      const samePairLinks = foundLinks.value.filter(item =>
-        item.switch_id === link.switch_id && item.server_id === link.server_id
-      )
-      const pairIndex = samePairLinks.findIndex(item => item.id === link.id)
-      const offset = samePairLinks.length > 1 ? (pairIndex - (samePairLinks.length - 1) / 2) * 18 : 0
+      const pair = linkPairMeta.value.get(link.id) || { index: 0, count: 1 }
+      const offset = pair.count > 1 ? (pair.index - (pair.count - 1) / 2) * 18 : 0
       return {
         ...link,
         id: `link-${link.id}`,

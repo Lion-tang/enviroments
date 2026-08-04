@@ -6,8 +6,10 @@ Pure functions, no FastAPI dependency
 import os
 import io
 import paramiko
+import secrets
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Optional
+from typing import BinaryIO, Iterator, Optional
 
 
 @dataclass
@@ -19,12 +21,37 @@ class FileEntry:
     modified: Optional[str] = None
 
 
-def sftp_connect(ip: str, port: int, username: str, password: Optional[str], key_file: Optional[str]):
-    """Create and return an SFTP client."""
-    transport = paramiko.Transport((ip, port))
-    transport.connect(username=username, password=password, hostkey=None)
-    sftp = paramiko.SFTPClient.from_transport(transport)
-    return sftp
+@contextmanager
+def sftp_connection(
+    ip: str,
+    port: int,
+    username: str,
+    password: Optional[str],
+    key_file: Optional[str],
+):
+    """Own an SSH client and its SFTP channel as one deterministic resource."""
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    sftp = None
+    try:
+        ssh.connect(
+            ip,
+            port=port,
+            username=username,
+            password=password,
+            key_filename=key_file,
+            timeout=10,
+            banner_timeout=10,
+            auth_timeout=10,
+            look_for_keys=False,
+            allow_agent=False,
+        )
+        sftp = ssh.open_sftp()
+        yield sftp
+    finally:
+        if sftp is not None:
+            sftp.close()
+        ssh.close()
 
 
 def list_directory(
@@ -40,9 +67,8 @@ def list_directory(
     Returns list of FileEntry sorted: directories first, then files, alphabetically.
     Normalizes all paths to forward slashes.
     """
-    client = sftp_connect(ip, port, username, password, key_file)
     entries = []
-    try:
+    with sftp_connection(ip, port, username, password, key_file) as client:
         # Normalize remote_path to forward slashes
         normalized = remote_path.replace("\\", "/")
         # Keep "/" as root; strip trailing "/" for other paths
@@ -105,9 +131,6 @@ def list_directory(
                     size=None,
                     modified=None,
                 ))
-    finally:
-        client.close()
-
     # Sort: directories first, then files, alphabetical
     entries.sort(key=lambda e: (0 if e.type == "directory" else 1, e.name.lower()))
     return entries
@@ -121,12 +144,29 @@ def download_file(
     key_file: Optional[str],
     remote_path: str,
 ) -> bytes:
-    """Download a file and return its bytes content."""
-    client = sftp_connect(ip, port, username, password, key_file)
-    try:
-        return client.open(remote_path, "rb").read()
-    finally:
-        client.close()
+    """Compatibility helper for callers that still require complete bytes."""
+    return b"".join(stream_file(
+        ip, port, username, password, key_file, remote_path
+    ))
+
+
+def stream_file(
+    ip: str,
+    port: int,
+    username: str,
+    password: Optional[str],
+    key_file: Optional[str],
+    remote_path: str,
+    chunk_size: int = 64 * 1024,
+) -> Iterator[bytes]:
+    """Yield a remote file in bounded chunks and close resources on termination."""
+    with sftp_connection(ip, port, username, password, key_file) as client:
+        with client.open(remote_path, "rb") as remote_file:
+            while True:
+                chunk = remote_file.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk
 
 
 def upload_file(
@@ -138,20 +178,81 @@ def upload_file(
     remote_path: str,
     content: bytes,
 ) -> dict:
-    """Upload a file. Creates parent directories if needed. Returns result dict."""
-    client = sftp_connect(ip, port, username, password, key_file)
-    try:
-        # Ensure parent directory exists
+    """Compatibility wrapper around the streaming uploader."""
+    return upload_stream(
+        ip,
+        port,
+        username,
+        password,
+        key_file,
+        remote_path,
+        io.BytesIO(content),
+    )
+
+
+def upload_stream(
+    ip: str,
+    port: int,
+    username: str,
+    password: Optional[str],
+    key_file: Optional[str],
+    remote_path: str,
+    source: BinaryIO,
+    chunk_size: int = 64 * 1024,
+    max_bytes: Optional[int] = None,
+) -> dict:
+    """Copy a binary stream to SFTP without materializing the complete file."""
+    with sftp_connection(ip, port, username, password, key_file) as client:
         parent = os.path.dirname(remote_path).replace("\\", "/")
         if parent and parent != ".":
             _mkdir_recursive(client, parent)
 
-        # Write file
-        client.open(remote_path, "wb").write(content)
-        stat = client.stat(remote_path)
+        temp_path = f"{remote_path}.upload-{secrets.token_hex(8)}.tmp"
+        total = 0
+        try:
+            with client.open(temp_path, "wb") as remote_file:
+                while True:
+                    chunk = source.read(chunk_size)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if max_bytes is not None and total > max_bytes:
+                        raise ValueError(f"file exceeds {max_bytes} byte limit")
+                    remote_file.write(chunk)
+            stat = client.stat(temp_path)
+            _replace_remote_file(client, temp_path, remote_path)
+        except Exception:
+            try:
+                client.remove(temp_path)
+            except Exception:
+                pass
+            raise
+
         return {"path": remote_path, "size": stat.st_size, "success": True}
-    finally:
-        client.close()
+
+
+def _replace_remote_file(client, temp_path: str, destination: str) -> None:
+    """Replace destination while preserving it if a non-atomic fallback fails."""
+    posix_rename = getattr(client, "posix_rename", None)
+    if posix_rename is not None:
+        try:
+            posix_rename(temp_path, destination)
+            return
+        except (OSError, IOError):
+            pass
+
+    destination_exists = True
+    try:
+        client.stat(destination)
+    except (OSError, IOError):
+        destination_exists = False
+
+    if destination_exists:
+        raise RuntimeError(
+            "SFTP server does not support atomic replacement; existing file was preserved"
+        )
+
+    client.rename(temp_path, destination)
 
 
 def create_directory(
@@ -163,15 +264,12 @@ def create_directory(
     remote_path: str,
 ) -> dict:
     """Create a directory recursively via SFTP."""
-    client = sftp_connect(ip, port, username, password, key_file)
-    try:
+    with sftp_connection(ip, port, username, password, key_file) as client:
         normalized = (remote_path or "").replace("\\", "/").rstrip("/")
         if not normalized or normalized == ".":
             raise ValueError("Directory path is required")
         _mkdir_recursive(client, normalized)
         return {"path": normalized, "success": True}
-    finally:
-        client.close()
 
 
 def _mkdir_recursive(sftp, path: str):
@@ -200,20 +298,28 @@ def get_home_directory(
     key_file: Optional[str],
 ) -> str:
     """Get the user's home directory via SFTP."""
-    client = sftp_connect(ip, port, username, password, key_file)
     try:
-        return client.get_channel().recv(-1)  # Not reliable
+        with sftp_connection(ip, port, username, password, key_file) as client:
+            return client.normalize(".")
     except Exception:
         pass
-    finally:
-        client.close()
 
     # Fallback: run remote command
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
-        ssh.connect(ip, port=port, username=username, password=password,
-                    key_filename=key_file, timeout=10, look_for_keys=False)
+        ssh.connect(
+            ip,
+            port=port,
+            username=username,
+            password=password,
+            key_filename=key_file,
+            timeout=10,
+            banner_timeout=10,
+            auth_timeout=10,
+            look_for_keys=False,
+            allow_agent=False,
+        )
         _stdin, stdout, _stderr = ssh.exec_command("echo $HOME", timeout=10)
         return stdout.read().decode().strip()
     finally:

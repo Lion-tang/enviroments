@@ -10,8 +10,10 @@ from app.models.server import Server
 from app.models.server_favorite import ServerFavorite
 from app.api.v1.schemas import (
     ServerCreate, ServerUpdate, ServerResponse,
-    ServerListResponse, StatusCheckResponse, ServerDetailResponse
+    ServerListResponse, StatusCheckResponse, ServerDetailResponse,
+    BatchStatusRequest,
 )
+from app.core.status_checks import check_server_statuses
 from infrastructure.ssh_client import get_server_info_via_ssh, check_online, ServerInfo
 
 router = APIRouter(prefix="/servers", tags=["servers"], dependencies=[Depends(get_current_user)])
@@ -61,13 +63,25 @@ def _update_server_fields(db: Session, server_id: int, values: dict) -> bool:
 
 
 @router.get("", response_model=ServerListResponse)
-def list_servers(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def list_servers(
+    compact: bool = False,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     servers = db.query(Server).order_by(Server.ip).all()
     favorite_ids = _favorite_server_ids(db, current_user.id)
     return ServerListResponse(
         total=len(servers),
-        servers=[_to_response(s, s.id in favorite_ids) for s in servers]
+        servers=[
+            _to_response(s, s.id in favorite_ids, compact=compact)
+            for s in servers
+        ]
     )
+
+
+@router.post("/status/batch")
+def check_status_batch(payload: BatchStatusRequest, db: Session = Depends(get_db)):
+    return check_server_statuses(db, payload.server_ids)
 
 
 @router.post("/{server_id}/occupy", response_model=ServerResponse)
@@ -436,7 +450,11 @@ def _favorite_server_ids(db: Session, user_id: int) -> set[int]:
     return {server_id for (server_id,) in rows}
 
 
-def _to_response(server: Server, is_favorite: bool = False) -> ServerResponse:
+def _to_response(
+    server: Server,
+    is_favorite: bool = False,
+    compact: bool = False,
+) -> ServerResponse:
     cached_info = None
     cached_os_version = None
     cached_cpu_model = None
@@ -471,7 +489,7 @@ def _to_response(server: Server, is_favorite: bool = False) -> ServerResponse:
         dpu=server.dpu,
         is_online=server.is_online,
         online_checked_at=server.online_checked_at,
-        cached_info=cached_info,
+        cached_info=None if compact else cached_info,
         cached_at=server.cached_at,
         created_at=server.created_at,
         updated_at=server.updated_at,
@@ -479,7 +497,7 @@ def _to_response(server: Server, is_favorite: bool = False) -> ServerResponse:
         cached_cpu_model=cached_cpu_model,
         cached_hostname=cached_hostname,
         cached_mem=cached_mem,
-        cached_interfaces=cached_interfaces,
+        cached_interfaces=None if compact else cached_interfaces,
         occupied_by=server.occupied_by,
         occupied_at=server.occupied_at,
         assoc_switch_count=len(server.switches) if server.switches else 0,
