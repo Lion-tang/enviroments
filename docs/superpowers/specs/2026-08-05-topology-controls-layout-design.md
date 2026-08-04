@@ -48,7 +48,7 @@ The backend already accepts `server_ids` at `POST /api/v1/topology/discover` and
 On desktop, the topology grid, canvas, and inspector share one bounded height:
 
 ```css
-height: clamp(440px, calc(100dvh - 300px), 640px);
+height: clamp(500px, calc(100dvh - 300px), 740px);
 ```
 
 The canvas keeps its internal pan and zoom behavior. The inspector keeps its header and footer visible while its link-detail list scrolls internally when necessary. Existing viewport-relative minimum heights are removed so they cannot force the page below the fold.

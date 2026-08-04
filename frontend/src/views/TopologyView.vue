@@ -1,17 +1,32 @@
 <template>
   <div class="topology-page fade-in">
     <div class="toolbar topology-toolbar">
-      <el-button type="primary" @click="loadTopology" :loading="loading">
-        <el-icon><Refresh /></el-icon> 刷新拓扑
-      </el-button>
-      <el-button type="success" @click="discoverLinks" :loading="discovering">
-        <el-icon><Connection /></el-icon> 重新生成拓扑图
-      </el-button>
+      <el-tooltip :content="TOPOLOGY_HELP.load" placement="top">
+        <el-button type="primary" @click="loadTopology" :loading="loading">
+          <el-icon><Refresh /></el-icon> 刷新拓扑
+        </el-button>
+      </el-tooltip>
+      <el-tooltip :content="TOPOLOGY_HELP.discoverAll" placement="top">
+        <el-button
+          type="success"
+          @click="discoverLinks()"
+          :loading="discovering && discoveringServerId === null"
+          :disabled="discovering"
+        >
+          <el-icon><Connection /></el-icon> 重新生成拓扑图
+        </el-button>
+      </el-tooltip>
       <el-tag type="success">链路 {{ foundLinks.length }}</el-tag>
       <el-tag type="info">交换机 {{ switchNodes.length }}</el-tag>
       <el-tag type="info">服务器 {{ serverNodes.length }}</el-tag>
-      <el-button v-if="!isDefaultView" size="small" @click="resetView">重置视图</el-button>
+      <el-tooltip v-if="!isDefaultView" :content="TOPOLOGY_HELP.reset" placement="top">
+        <el-button size="small" @click="resetView">重置视图</el-button>
+      </el-tooltip>
     </div>
+
+    <el-alert class="topology-notice" type="info" :closable="false" show-icon>
+      <template #title>{{ TOPOLOGY_NOTICE }}</template>
+    </el-alert>
 
     <div class="topology-layout">
       <section
@@ -88,13 +103,30 @@
             <div class="panel-title">{{ selectedNodeTitle }}</div>
             <div class="panel-subtitle">{{ selectedNodeSubtitle }}</div>
           </div>
-          <el-button
-            v-if="selectedNode"
-            size="small"
-            @click="openDetail(selectedNode)"
-          >
-            详情
-          </el-button>
+          <div class="panel-actions">
+            <el-tooltip
+              v-if="selectedServer"
+              :content="TOPOLOGY_HELP.discoverCurrent"
+              placement="top"
+            >
+              <el-button
+                type="primary"
+                size="small"
+                :loading="discovering && discoveringServerId === selectedServer.entity_id"
+                :disabled="discovering"
+                @click="discoverSelectedServer"
+              >
+                刷新当前服务器
+              </el-button>
+            </el-tooltip>
+            <el-button
+              v-if="selectedNode"
+              size="small"
+              @click="openDetail(selectedNode)"
+            >
+              详情
+            </el-button>
+          </div>
         </div>
 
         <div v-if="selectedRows.length" class="detail-list">
@@ -131,11 +163,18 @@ import { Connection, Refresh } from '@element-plus/icons-vue'
 import { topology as topologyApi } from '../api/index.js'
 import ServerDetail from '../components/ServerDetail.vue'
 import SwitchDetail from '../components/SwitchDetail.vue'
+import {
+  discoveryServerIds,
+  selectedServerFromNode,
+  TOPOLOGY_HELP,
+  TOPOLOGY_NOTICE,
+} from './topology-controls.js'
 
 const emit = defineEmits(['stats'])
 
 const loading = ref(false)
 const discovering = ref(false)
+const discoveringServerId = ref(null)
 const nodes = ref([])
 const edges = ref([])
 const links = ref([])
@@ -172,6 +211,7 @@ const nodeMap = computed(() => {
 })
 
 const selectedNode = computed(() => nodeMap.value.get(selectedNodeId.value) || null)
+const selectedServer = computed(() => selectedServerFromNode(selectedNode.value))
 
 const serverPrimarySwitch = computed(() => {
   const map = new Map()
@@ -572,17 +612,26 @@ async function loadTopology() {
   }
 }
 
-async function discoverLinks() {
+async function discoverLinks(serverIds = null) {
+  if (discovering.value) return
   discovering.value = true
+  discoveringServerId.value = serverIds?.[0] ?? null
   try {
-    await topologyApi.discover()
-    ElMessage.success('链路发现完成')
+    await topologyApi.discover(serverIds)
+    ElMessage.success(serverIds ? '当前服务器链路发现完成' : '链路发现完成')
     await loadTopology()
   } catch (error) {
     ElMessage.error(error.response?.data?.detail || '链路发现失败')
   } finally {
     discovering.value = false
+    discoveringServerId.value = null
   }
+}
+
+function discoverSelectedServer() {
+  const serverIds = discoveryServerIds(selectedNode.value)
+  if (!serverIds) return
+  return discoverLinks(serverIds)
 }
 
 onMounted(() => {
@@ -603,7 +652,7 @@ onBeforeUnmount(() => {
 .topology-page {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
 }
 
 .topology-toolbar {
@@ -617,7 +666,8 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   gap: 18px;
-  min-height: calc(100vh - 180px);
+  height: clamp(500px, calc(100dvh - 300px), 740px);
+  min-height: 0;
 }
 
 .topology-canvas,
@@ -626,10 +676,11 @@ onBeforeUnmount(() => {
   border: 3px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
+  height: 100%;
+  min-height: 0;
 }
 
 .topology-canvas {
-  min-height: calc(100vh - 180px);
   overflow: hidden;
   position: relative;
   cursor: grab;
@@ -797,7 +848,6 @@ onBeforeUnmount(() => {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 180px);
   overflow: hidden;
 }
 
@@ -808,6 +858,13 @@ onBeforeUnmount(() => {
   gap: 12px;
   padding-bottom: 14px;
   border-bottom: 2px solid var(--border-light);
+}
+
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .panel-title {
@@ -825,8 +882,10 @@ onBeforeUnmount(() => {
 .detail-list {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 9px;
   margin-top: 14px;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -876,6 +935,11 @@ onBeforeUnmount(() => {
 @media (max-width: 1100px) {
   .topology-layout {
     grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .topology-canvas {
+    min-height: 500px;
   }
 
   .inspector-panel {
