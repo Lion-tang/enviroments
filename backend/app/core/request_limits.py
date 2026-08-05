@@ -1,5 +1,7 @@
 """ASGI request limits applied before FastAPI parses large upload bodies."""
 
+from typing import Optional
+
 
 MAX_UPLOAD_BYTES = 256 * 1024 * 1024
 MULTIPART_BODY_LIMIT = MAX_UPLOAD_BYTES + 1024 * 1024
@@ -21,7 +23,7 @@ class UploadBodyLimitMiddleware:
         self.multipart_limit = multipart_limit
         self.legacy_limit = legacy_limit
 
-    def _limit_for(self, scope) -> int | None:
+    def _limit_for(self, scope) -> Optional[int]:
         if scope.get("type") != "http" or scope.get("method") != "POST":
             return None
         path = scope.get("path", "")
