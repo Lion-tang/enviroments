@@ -25,7 +25,7 @@
 
 需要先安装：
 
-- Python 3.11 或更新版本
+- Python 3.9 或更新版本
 - Node.js 20
 - pnpm 10
 
@@ -48,7 +48,7 @@ cd enviroments
 cd backend
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 cd ..
 ```
 
@@ -58,7 +58,7 @@ Windows PowerShell 可使用：
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 cd ..
 ```
 
@@ -97,12 +97,12 @@ http://localhost:3000
 
 ### 6. 一键构建出版本
 
-构建前先安装 PyInstaller：
+构建前先安装固定版本的 PyInstaller 构建依赖：
 
 ```bash
 cd backend
 source .venv/bin/activate
-pip install pyinstaller
+python -m pip install -r requirements-build.txt
 cd ..
 ```
 
@@ -180,7 +180,7 @@ enviroments/
 
 ```bash
 cd backend
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -212,11 +212,11 @@ pnpm run build
 
 ### Windows EXE
 
-先确认已安装 Python、Node.js、pnpm，并且当前 Python 环境已经安装 `backend/requirements.txt` 和 `pyinstaller`：
+先确认已安装 Python 3.9 或更新版本、Node.js、pnpm，并且当前 Python 环境已经安装后端运行与构建依赖：
 
 ```bat
 cd backend
-pip install -r requirements.txt pyinstaller
+python -m pip install -r requirements.txt -r requirements-build.txt
 cd ..
 ```
 
@@ -231,6 +231,8 @@ build.bat
 - 安装/更新前端依赖并构建 `frontend/dist/`。
 - 进入 `backend/`，使用 `backend/Enviroments.spec` 打包。
 - 输出到根目录 `dist/Enviroments/`。
+
+`build.bat` 接受 Python 3.9 或更新版本，并将实际用于构建的 Python 解释器嵌入 Windows 产物。
 
 运行：
 
@@ -261,7 +263,7 @@ chmod +x build.sh
 ./build.sh
 ```
 
-输出目录为 `dist/Enviroments/`。这个脚本会在当前机器架构上打包，适合本机验证或在目标 Linux/macOS 环境中生成对应平台产物；跨平台发布建议使用对应的 GitHub Actions 工作流。
+输出目录为 `dist/Enviroments/`。本地脚本接受 Python 3.9 或更新版本，并将实际用于构建的 Python 解释器嵌入产物。这个脚本会在当前机器架构上打包，适合本机验证或在目标 Linux/macOS 环境中生成对应平台产物；跨平台发布建议使用对应的 GitHub Actions 工作流。
 
 ## GitHub Actions 构建
 
@@ -270,23 +272,23 @@ chmod +x build.sh
 Windows EXE 流程：
 
 - 使用 Windows Server 2022。
-- 安装 Python 3.11、Node.js 20、pnpm 10。
+- 安装 Python 3.9、Node.js 20、pnpm 10。
 - `frontend` 下执行 `pnpm install --frozen-lockfile` 和 `pnpm run build`。
-- 安装 `backend/requirements.txt` 与 PyInstaller。
-- 在 `backend` 目录执行 `pyinstaller Enviroments.spec --noconfirm --clean --distpath ../dist --workpath ../build`。
+- 安装 `backend/requirements.txt` 与 `backend/requirements-build.txt`。
+- 在 `backend` 目录执行 `python -m PyInstaller Enviroments.spec --noconfirm --clean --distpath ../dist --workpath ../build`。
 - 上传 `dist/Enviroments-*` 构建产物。
 
 Linux ARM64 tar.gz 流程：
 
 - 使用 `ubuntu-22.04-arm` runner 负责前端构建，并在 `quay.io/pypa/manylinux_2_34_aarch64` 容器中执行 PyInstaller。
-- 安装 Node.js 20、pnpm 10；后端打包容器内使用系统 Python 和 `python3-devel`，保证 PyInstaller 能找到 shared libpython。
+- 安装 Node.js 20、pnpm 10；后端打包容器内使用 `/opt/python/cp39-cp39/bin/python`，以 CPython 3.9 运行 PyInstaller。
 - 产物基于 `quay.io/pypa/manylinux_2_34_aarch64`。
 - 将 `dist/Enviroments/` 和 `docs/README_DEPLOY_LINUX.md` 打成 `Enviroments-linux-arm64-*.tar.gz`。
 
 Linux x86_64 tar.gz 流程：
 
 - 使用 `ubuntu-22.04` runner 负责前端构建，并在 `quay.io/pypa/manylinux_2_34_x86_64` 容器中执行 PyInstaller。
-- 安装 Node.js 20、pnpm 10；后端打包容器内使用系统 Python 和 `python3-devel`，保证 PyInstaller 能找到 shared libpython。
+- 安装 Node.js 20、pnpm 10；后端打包容器内使用 `/opt/python/cp39-cp39/bin/python`，以 CPython 3.9 运行 PyInstaller。
 - 产物基于 `quay.io/pypa/manylinux_2_34_x86_64`。
 - 将 `dist/Enviroments/` 和 `docs/README_DEPLOY_LINUX.md` 打成 `Enviroments-linux-x86_64-*.tar.gz`。
 

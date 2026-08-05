@@ -21,7 +21,7 @@ http://<server-ip>:8000
 
 - Use the ARM64 package on Linux ARM64, and the x86_64 package on Linux x86_64.
 - PyInstaller runs inside a `manylinux_2_34` container for the target architecture, so Linux packages target glibc 2.34. Systems older than glibc 2.34 may still require a custom build on an older base.
-- No Node.js, pnpm, Python, or pip is required on the offline machine.
+- Official standalone packages embed CPython 3.9. The Python version installed on the offline machine is not used; no Node.js, pnpm, Python, or pip installation is required.
 - The runtime directory must be writable because SQLite data and logs are generated at runtime.
 - SSH, SFTP, and Web SSH require network access from this machine to managed servers.
 
