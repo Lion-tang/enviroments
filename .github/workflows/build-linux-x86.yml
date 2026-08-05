@@ -47,14 +47,14 @@ jobs:
             quay.io/pypa/manylinux_2_34_x86_64:latest \
             /bin/bash -lc '
               set -euo pipefail
-              dnf install -y python3 python3-pip python3-devel gcc zlib-devel binutils
-              PYTHON=/usr/bin/python3
-              "${PYTHON}" -c "import sys, sysconfig; print(sys.version); print(\"Py_ENABLE_SHARED=\", sysconfig.get_config_var(\"Py_ENABLE_SHARED\"))"
+              dnf install -y gcc zlib-devel binutils
+              ENVIROMENTS_PYTHON=/opt/python/cp39-cp39/bin/python
+              "${ENVIROMENTS_PYTHON}" -c "import sys, sysconfig; print(sys.version); assert sys.version_info[:2] == (3, 9); print(\"Py_ENABLE_SHARED=\", sysconfig.get_config_var(\"Py_ENABLE_SHARED\"))"
 
-              "${PYTHON}" -m pip install --upgrade pip
-              "${PYTHON}" -m pip install -r requirements.txt
-              PYINSTALLER_COMPILE_BOOTLOADER=1 "${PYTHON}" -m pip install --no-binary pyinstaller pyinstaller
-              "${PYTHON}" -m PyInstaller Enviroments.spec --noconfirm --clean --distpath ../dist --workpath ../build
+              "${ENVIROMENTS_PYTHON}" -m pip install --upgrade pip
+              "${ENVIROMENTS_PYTHON}" -m pip install -r requirements.txt
+              PYINSTALLER_COMPILE_BOOTLOADER=1 "${ENVIROMENTS_PYTHON}" -m pip install --no-binary pyinstaller -r requirements-build.txt
+              "${ENVIROMENTS_PYTHON}" -m PyInstaller Enviroments.spec --noconfirm --clean --distpath ../dist --workpath ../build
               rm -f ../dist/Enviroments/_internal/libgcc_s.so.1
 
               ldd --version > /tmp/ldd-version.txt 2>&1

@@ -22,7 +22,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.9'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -38,7 +38,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\pip\Cache
-          key: pip-${{ runner.os }}-${{ hashFiles('backend/requirements.txt') }}
+          key: pip-${{ runner.os }}-${{ hashFiles('backend/requirements.txt', 'backend/requirements-build.txt') }}
           restore-keys: |
             pip-${{ runner.os }}-
 
@@ -62,12 +62,14 @@ jobs:
 
       - name: Install Python deps
         shell: pwsh
-        run: pip install -r backend/requirements.txt pyinstaller
+        run: |
+          python -c "import sys; print(sys.version); assert sys.version_info[:2] == (3, 9)"
+          python -m pip install -r backend/requirements.txt -r backend/requirements-build.txt
 
       - name: Build with PyInstaller
         working-directory: backend
         shell: pwsh
-        run: pyinstaller Enviroments.spec --noconfirm --clean --distpath ../dist --workpath ../build
+        run: python -m PyInstaller Enviroments.spec --noconfirm --clean --distpath ../dist --workpath ../build
 
       - name: Rename output folder
         shell: pwsh
