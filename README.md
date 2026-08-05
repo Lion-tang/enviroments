@@ -281,14 +281,14 @@ Windows EXE 流程：
 Linux ARM64 tar.gz 流程：
 
 - 使用 `ubuntu-22.04-arm` runner 负责前端构建，并在 `quay.io/pypa/manylinux_2_34_aarch64` 容器中执行 PyInstaller。
-- 安装 Node.js 20、pnpm 10；后端打包容器内使用 `/opt/python/cp39-cp39/bin/python`，以 CPython 3.9 运行 PyInstaller。
+- 安装 Node.js 20、pnpm 10；后端打包容器内安装系统 Python 3.9 和 `python3-devel`，并在确认 shared libpython 可用后运行 PyInstaller。
 - 产物基于 `quay.io/pypa/manylinux_2_34_aarch64`。
 - 将 `dist/Enviroments/` 和 `docs/README_DEPLOY_LINUX.md` 打成 `Enviroments-linux-arm64-*.tar.gz`。
 
 Linux x86_64 tar.gz 流程：
 
 - 使用 `ubuntu-22.04` runner 负责前端构建，并在 `quay.io/pypa/manylinux_2_34_x86_64` 容器中执行 PyInstaller。
-- 安装 Node.js 20、pnpm 10；后端打包容器内使用 `/opt/python/cp39-cp39/bin/python`，以 CPython 3.9 运行 PyInstaller。
+- 安装 Node.js 20、pnpm 10；后端打包容器内安装系统 Python 3.9 和 `python3-devel`，并在确认 shared libpython 可用后运行 PyInstaller。
 - 产物基于 `quay.io/pypa/manylinux_2_34_x86_64`。
 - 将 `dist/Enviroments/` 和 `docs/README_DEPLOY_LINUX.md` 打成 `Enviroments-linux-x86_64-*.tar.gz`。
 

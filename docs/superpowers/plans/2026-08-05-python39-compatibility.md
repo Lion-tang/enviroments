@@ -208,6 +208,8 @@ git commit -m "build: support Python 3.9 and newer locally"
 
 ### Task 3: Test the Minimum Version and Build Official Artifacts with Python 3.9
 
+> Correction after CI verification: the manylinux `/opt/python/cp39-cp39` interpreter is built without shared libpython and cannot be used by PyInstaller. Linux artifact jobs use AlmaLinux's system Python 3.9 plus `python3-devel` and assert `Py_ENABLE_SHARED == 1`.
+
 **Files:**
 - Create: `.github/workflows/test-python.yml`
 - Modify: `.github/workflows/build.yml:22-70`
@@ -272,28 +274,29 @@ In `.github/workflows/build.yml`:
 - Install with `python -m pip install -r backend/requirements.txt -r backend/requirements-build.txt`.
 - Build with `python -m PyInstaller Enviroments.spec ...`.
 
-- [ ] **Step 3: Pin the Linux ARM64 official build to the manylinux CPython 3.9 interpreter**
+- [ ] **Step 3: Pin the Linux ARM64 official build to the system CPython 3.9 interpreter**
 
-Inside the manylinux shell in `.github/workflows/build-linux.yml`, replace the distribution Python setup with:
+Inside the manylinux shell in `.github/workflows/build-linux.yml`, install and validate the distribution Python 3.9 with shared libpython:
 
 ```bash
-ENVIROMENTS_PYTHON=/opt/python/cp39-cp39/bin/python
-"${ENVIROMENTS_PYTHON}" -c 'import sys, sysconfig; print(sys.version); assert sys.version_info[:2] == (3, 9); print("Py_ENABLE_SHARED=", sysconfig.get_config_var("Py_ENABLE_SHARED"))'
+dnf install -y python3 python3-pip python3-devel
+ENVIROMENTS_PYTHON=/usr/bin/python3
+"${ENVIROMENTS_PYTHON}" -c 'import sys, sysconfig; shared = sysconfig.get_config_var("Py_ENABLE_SHARED"); print(sys.version, shared); assert sys.version_info[:2] == (3, 9); assert shared == 1'
 "${ENVIROMENTS_PYTHON}" -m pip install --upgrade pip
 "${ENVIROMENTS_PYTHON}" -m pip install -r requirements.txt -r requirements-build.txt
 "${ENVIROMENTS_PYTHON}" -m PyInstaller Enviroments.spec --noconfirm --clean --distpath ../dist --workpath ../build
 ```
 
-Do not install the unversioned distribution `python3`, `python3-pip`, or `python3-devel` packages.
+Do not use `/opt/python/cp39-cp39`; it lacks the shared libpython required by PyInstaller.
 
 - [ ] **Step 4: Pin the Linux x86_64 official build and preserve bootloader compilation**
 
 Inside the manylinux shell in `.github/workflows/build-linux-x86.yml`, retain `gcc`, `zlib-devel`, and `binutils`, then use:
 
 ```bash
-dnf install -y gcc zlib-devel binutils
-ENVIROMENTS_PYTHON=/opt/python/cp39-cp39/bin/python
-"${ENVIROMENTS_PYTHON}" -c 'import sys, sysconfig; print(sys.version); assert sys.version_info[:2] == (3, 9); print("Py_ENABLE_SHARED=", sysconfig.get_config_var("Py_ENABLE_SHARED"))'
+dnf install -y python3 python3-pip python3-devel gcc zlib-devel binutils
+ENVIROMENTS_PYTHON=/usr/bin/python3
+"${ENVIROMENTS_PYTHON}" -c 'import sys, sysconfig; shared = sysconfig.get_config_var("Py_ENABLE_SHARED"); print(sys.version, shared); assert sys.version_info[:2] == (3, 9); assert shared == 1'
 "${ENVIROMENTS_PYTHON}" -m pip install --upgrade pip
 "${ENVIROMENTS_PYTHON}" -m pip install -r requirements.txt
 PYINSTALLER_COMPILE_BOOTLOADER=1 "${ENVIROMENTS_PYTHON}" -m pip install --no-binary pyinstaller -r requirements-build.txt
@@ -308,7 +311,7 @@ Run from the repository root:
 
 ```powershell
 python -c "from pathlib import Path; w=Path('.github/workflows/build.yml').read_text(); assert \"python-version: '3.9'\" in w; assert 'requirements-build.txt' in w; assert 'python -m PyInstaller' in w"
-python -c "from pathlib import Path; files=['.github/workflows/build-linux.yml','.github/workflows/build-linux-x86.yml']; texts=[Path(f).read_text() for f in files]; assert all('/opt/python/cp39-cp39/bin/python' in t for t in texts); assert all('requirements-build.txt' in t for t in texts); assert all('/usr/bin/python3' not in t for t in texts)"
+python -c "from pathlib import Path; files=['.github/workflows/build-linux.yml','.github/workflows/build-linux-x86.yml']; texts=[Path(f).read_text() for f in files]; assert all('/usr/bin/python3' in t for t in texts); assert all('python3-devel' in t for t in texts); assert all('Py_ENABLE_SHARED' in t for t in texts)"
 python -c "from pathlib import Path; w=Path('.github/workflows/test-python.yml').read_text(); assert \"['3.9', '3.12']\" in w; assert 'python -m pytest -v' in w; assert 'import app.main' in w"
 ```
 
@@ -346,7 +349,7 @@ State that local scripts accept Python 3.9 and newer and that locally generated 
 
 - [ ] **Step 2: Update official workflow and offline-runtime documentation**
 
-Describe all three official workflows as using CPython 3.9. For Linux, replace references to distribution `python3` and `python3-devel` with the manylinux interpreter `/opt/python/cp39-cp39/bin/python`.
+Describe all three official workflows as using CPython 3.9. For Linux, document the AlmaLinux system Python and `python3-devel` requirement that provides shared libpython to PyInstaller.
 
 Add this runtime distinction to `docs/README_DEPLOY_LINUX.md`:
 

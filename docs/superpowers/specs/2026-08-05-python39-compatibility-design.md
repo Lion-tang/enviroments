@@ -43,7 +43,7 @@ Both scripts use the same interpreter for version validation, dependency executi
 
 ## Continuous Integration and Packaging
 
-The Windows workflow uses `actions/setup-python` with Python 3.9 for the official executable. The two manylinux workflows use `/opt/python/cp39-cp39/bin/python` instead of the container distribution's unversioned `/usr/bin/python3`. Every packaging job prints and asserts its interpreter version before installing dependencies or running PyInstaller.
+The Windows workflow uses `actions/setup-python` with Python 3.9 for the official executable. The two manylinux workflows install the AlmaLinux system Python and `python3-devel`, then use `/usr/bin/python3`. Every packaging job prints and asserts its interpreter version before installing dependencies or running PyInstaller; Linux jobs also assert that `Py_ENABLE_SHARED` is enabled because PyInstaller must collect shared libpython.
 
 A compatibility test job runs the backend suite on Python 3.9 and a current newer interpreter. Python 3.9 is the blocking minimum-version check; the newer interpreter catches forward-compatibility regressions.
 

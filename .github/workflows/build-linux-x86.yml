@@ -47,9 +47,9 @@ jobs:
             quay.io/pypa/manylinux_2_34_x86_64:latest \
             /bin/bash -lc '
               set -euo pipefail
-              dnf install -y gcc zlib-devel binutils
-              ENVIROMENTS_PYTHON=/opt/python/cp39-cp39/bin/python
-              "${ENVIROMENTS_PYTHON}" -c "import sys, sysconfig; print(sys.version); assert sys.version_info[:2] == (3, 9); print(\"Py_ENABLE_SHARED=\", sysconfig.get_config_var(\"Py_ENABLE_SHARED\"))"
+              dnf install -y python3 python3-pip python3-devel gcc zlib-devel binutils
+              ENVIROMENTS_PYTHON=/usr/bin/python3
+              "${ENVIROMENTS_PYTHON}" -c "import sys, sysconfig; print(sys.version); shared = sysconfig.get_config_var(\"Py_ENABLE_SHARED\"); print(\"Py_ENABLE_SHARED=\", shared); assert sys.version_info[:2] == (3, 9); assert shared == 1"
 
               "${ENVIROMENTS_PYTHON}" -m pip install --upgrade pip
               "${ENVIROMENTS_PYTHON}" -m pip install -r requirements.txt
