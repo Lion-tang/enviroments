@@ -67,10 +67,11 @@ def _is_physical_interface(iface: str) -> bool:
 
 
 def _pci_of_interface(ssh_client, iface: str) -> dict:
-    """Get PCI address, description and speed for a network interface."""
+    """Get PCI address, description, device id and speed for a network interface."""
+    import re
     # Skip loopback and virtual interfaces
     if iface in ('lo',) or iface.startswith(('br-', 'docker', 'veth', 'virbr', 'tun', 'tap')):
-        return {"pci_addr": None, "pci_desc": None, "speed": None}
+        return {"pci_addr": None, "pci_desc": None, "pci_device_id": None, "speed": None}
 
     speed = ""
     speed_raw = _exec(ssh_client, f"cat /sys/class/net/{iface}/speed 2>/dev/null || echo ''").strip()
@@ -81,9 +82,16 @@ def _pci_of_interface(ssh_client, iface: str) -> dict:
     driver_link = _exec(ssh_client, f"readlink /sys/class/net/{iface}/device/driver 2>/dev/null").strip()
     iface_driver = driver_link.split('/')[-1] if driver_link else ''
 
+    # PCI device id from sysfs, e.g. 0x0222
+    device_raw = _exec(ssh_client, f"cat /sys/class/net/{iface}/device/device 2>/dev/null").strip()
+    pci_device_id = None
+    if device_raw:
+        m = re.match(r'(?:0x)?([0-9a-fA-F]{4})', device_raw)
+        if m:
+            pci_device_id = m.group(1).lower()
+
     # Build PCI addr -> (driver, description) map from lspci -nnk
     lspci_out = _exec(ssh_client, "lspci -nnk 2>/dev/null")
-    import re
     pci_map = {}  # pci_addr -> {driver, desc}
     current_pci = None
     for line in lspci_out.split('\n'):
@@ -137,7 +145,7 @@ def _pci_of_interface(ssh_client, iface: str) -> dict:
                     pci_desc = info['desc']
                     break
 
-    return {"pci_addr": pci_addr, "pci_desc": pci_desc, "speed": speed or None}
+    return {"pci_addr": pci_addr, "pci_desc": pci_desc, "speed": speed or None, "pci_device_id": pci_device_id}
 
 
 def _cpu_model_linux(ssh_client) -> str:
@@ -190,6 +198,7 @@ def fetch_server_info_linux(ssh_client) -> dict:
                         ),
                         "pci_addr": pci["pci_addr"],
                         "pci_desc": pci["pci_desc"],
+                        "pci_device_id": pci["pci_device_id"],
                         "speed": pci["speed"],
                     })
             except json.JSONDecodeError:
@@ -238,6 +247,7 @@ def fetch_server_info_windows(ssh_client) -> dict:
                         "mac": None,
                         "pci_addr": None,
                         "pci_desc": None,
+                        "pci_device_id": None,
                         "speed": None,
                     })
             except json.JSONDecodeError:
