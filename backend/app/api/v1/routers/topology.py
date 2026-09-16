@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -24,11 +25,50 @@ class TopologyDiscoverRequest(BaseModel):
     server_ids: Optional[list[int]] = None
 
 
+# PCI device id (4-hex, no 0x prefix) → NIC model
+SERVER_NIC_DEVICE_MAP = {
+    "0222": "1823",  # 100G PF
+    "0229": "1872",  # 100G PF
+    "0230": "1825",  # 200G PF
+}
+
+
+def _normalize_device_id(raw: Optional[str]) -> Optional[str]:
+    if not raw:
+        return None
+    m = re.match(r'^(?:0x)?([0-9a-f]{4})$', str(raw).strip().lower())
+    return m.group(1) if m else None
+
+
+def _extract_device_id_from_desc(pci_desc: Optional[str]) -> Optional[str]:
+    if not pci_desc:
+        return None
+    m = re.search(r'(?:device\s+0x|device\s+|0x)([0-9a-fA-F]{4})', pci_desc)
+    return m.group(1).lower() if m else None
+
+
+def _server_iface_devices(server: Server) -> dict:
+    """Map interface name → normalized PCI device id from cached server info."""
+    result = {}
+    try:
+        cached = json.loads(server.cached_info) if server.cached_info else {}
+    except (ValueError, TypeError):
+        cached = {}
+    for itf in cached.get("interfaces") or []:
+        name = itf.get("name")
+        if not name:
+            continue
+        dev_id = _normalize_device_id(itf.get("pci_device_id")) or _extract_device_id_from_desc(itf.get("pci_desc"))
+        if dev_id:
+            result[name] = dev_id
+    return result
+
+
 def _server_label(server: Server) -> str:
     return server.ip
 
 
-def _link_to_dict(link: NetworkLink) -> dict:
+def _link_to_dict(link: NetworkLink, device_id: Optional[str] = None) -> dict:
     return {
         "id": link.id,
         "server_id": link.server_id,
@@ -42,6 +82,8 @@ def _link_to_dict(link: NetworkLink) -> dict:
         "raw_output": link.raw_output,
         "error": link.error,
         "discovered_at": link.discovered_at,
+        "server_device_id": device_id,
+        "server_device_model": SERVER_NIC_DEVICE_MAP.get(device_id) if device_id else None,
     }
 
 
@@ -162,10 +204,17 @@ def get_topology(db: Session = Depends(get_db)):
                 "status": "associated",
             })
 
+    server_devices = {server.id: _server_iface_devices(server) for server in servers}
     return {
         "nodes": nodes,
         "edges": discovered + assoc_edges,
-        "links": [_link_to_dict(link) for link in links],
+        "links": [
+            _link_to_dict(
+                link,
+                device_id=(server_devices.get(link.server_id) or {}).get(link.server_interface),
+            )
+            for link in links
+        ],
     }
 
 
