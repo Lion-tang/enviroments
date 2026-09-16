@@ -86,6 +86,10 @@ class StatusCheckResponse(BaseModel):
     message: Optional[str] = None
 
 
+class BatchStatusRequest(BaseModel):
+    server_ids: Optional[list[int]] = None
+
+
 class ServerDetailResponse(BaseModel):
     id: int
     ip: str

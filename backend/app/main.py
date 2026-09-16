@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import FileResponse
 from app.core.database import init_db
+from app.core.request_limits import UploadBodyLimitMiddleware
 from app.api.v1.routers import servers, files, switches, terminal, topology
 from app.api.v1.routers import logs as logs_router
 from app.api.v1.routers.logs import switch_logs_router
@@ -45,6 +46,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Enviroments", version="1.0.0", lifespan=lifespan)
+app.add_middleware(UploadBodyLimitMiddleware)
 
 app.include_router(servers.router, prefix="/api/v1")
 app.include_router(files.router, prefix="/api/v1")

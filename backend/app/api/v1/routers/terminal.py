@@ -186,7 +186,8 @@ def _sync_ssh_connect(host, port, username, password, pkey, term, encoding) -> S
     try:
         ssh.connect(
             host, port=port, username=username, password=password, pkey=pkey,
-            timeout=10, look_for_keys=False, allow_agent=False,
+            timeout=10, banner_timeout=10, auth_timeout=10,
+            look_for_keys=False, allow_agent=False,
         )
     except socket.error as e:
         raise ValueError(f"Unable to connect to {host}:{port}: {e}")
@@ -303,34 +304,44 @@ async def handle_ws_message(worker: SSHWorker, message: str):
             await worker.close(reason="channel write error")
 
 
-async def _ssh_reader(worker: SSHWorker):
-    loop = asyncio.get_running_loop()
+CHANNEL_IDLE = object()
 
-    def _sync_recv():
-        """Sync recv - runs in thread pool, never blocks the asyncio loop."""
-        try:
-            if not worker.chan.recv_ready():
-                return b""
-            return worker.chan.recv(BUF_SIZE)
-        except Exception:
-            return None  # None means error/closed
+
+def _poll_channel(channel):
+    """Read a nonblocking channel while preserving idle, EOF, and error states."""
+    if not channel.recv_ready():
+        if getattr(channel, "closed", False) or channel.exit_status_ready():
+            return b""
+        return CHANNEL_IDLE
+    try:
+        return channel.recv(BUF_SIZE)
+    except Exception:
+        return None
+
+
+async def _ssh_reader(worker: SSHWorker):
+    idle_delay = 0.05
 
     try:
         while not worker.closed:
-            # Use run_in_executor so chan.recv() (which can block) runs in a thread
-            # This avoids the event loop blocking if recv() hangs
-            data = await loop.run_in_executor(None, _sync_recv)
+            data = _poll_channel(worker.chan)
 
             if worker.closed:
                 break
 
-            if data is None:  # exception in thread
+            if data is CHANNEL_IDLE:
+                await asyncio.sleep(idle_delay)
+                idle_delay = min(0.5, idle_delay * 1.5)
+                continue
+
+            idle_delay = 0.05
+            if data is None:
                 await worker.close(reason="chan recv error")
                 break
 
-            if not data:
-                await asyncio.sleep(0.05)
-                continue
+            if data == b"":
+                await worker.close(reason="channel closed")
+                break
 
             # Forward to WebSocket
             if worker.handler and not worker.closed:

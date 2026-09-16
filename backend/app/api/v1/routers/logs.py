@@ -2,10 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.auth import get_current_user
 from app.core.database import get_db
-from app.core.audit_log import LOG_DIR, read_json_lines, server_log_path
+from app.core.audit_log import LOG_DIR, clear_log, read_json_lines, server_log_path
 from app.models.server import Server
 import os
-import json
 
 router = APIRouter(prefix="/servers/{server_id}/logs", tags=["logs"], dependencies=[Depends(get_current_user)])
 
@@ -26,8 +25,7 @@ def clear_logs(server_id: int, db: Session = Depends(get_db)):
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
     path = server_log_path(server.ip)
-    if os.path.exists(path):
-        open(path, "w").close()
+    clear_log(path)
 
 
 # ─── Switch logs ────────────────────────────────────────────────────────────────
@@ -39,29 +37,11 @@ switch_logs_router = APIRouter(prefix="/switches/{switch_id}/logs", tags=["switc
 def get_switch_logs(switch_id: int, limit: int = Query(200, ge=1, le=2000)):
     """Read JSON log lines from backend/log/switch_{switch_id}.log"""
     path = os.path.join(LOG_DIR, f"switch_{switch_id}.log")
-    if not os.path.exists(path):
-        return {"total": 0, "logs": []}
-
-    with open(path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    total = len(lines)
-    recent = list(reversed(lines[-limit:]))
-    logs = []
-    for raw in recent:
-        raw = raw.strip()
-        if raw:
-            try:
-                logs.append(json.loads(raw))
-            except Exception:
-                logs.append({"raw": raw})
-
-    return {"total": total, "logs": logs}
+    return read_json_lines(path, limit)
 
 
 @switch_logs_router.delete("/clear", status_code=204)
 def clear_switch_logs(switch_id: int):
     """Clear the switch's log file."""
     path = os.path.join(LOG_DIR, f"switch_{switch_id}.log")
-    if os.path.exists(path):
-        open(path, "w").close()
+    clear_log(path)

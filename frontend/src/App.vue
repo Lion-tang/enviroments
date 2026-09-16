@@ -127,12 +127,13 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
-import ServerList from './views/ServerList.vue'
-import ServerFavorites from './views/ServerFavorites.vue'
-import SwitchList from './views/SwitchList.vue'
-import StandaloneSSH from './views/StandaloneSSH.vue'
-import TopologyView from './views/TopologyView.vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
+
+const ServerList = defineAsyncComponent(() => import('./views/ServerList.vue'))
+const ServerFavorites = defineAsyncComponent(() => import('./views/ServerFavorites.vue'))
+const SwitchList = defineAsyncComponent(() => import('./views/SwitchList.vue'))
+const StandaloneSSH = defineAsyncComponent(() => import('./views/StandaloneSSH.vue'))
+const TopologyView = defineAsyncComponent(() => import('./views/TopologyView.vue'))
 
 const activeTab = ref('servers')
 const username = ref(localStorage.getItem('username') || '')
@@ -255,6 +256,41 @@ window.addEventListener('hashchange', () => { sshRoute.value = parseHash() })
 
 .sidebar.collapsed {
   width: 58px;
+}
+
+.sidebar.collapsed .sidebar-logo {
+  justify-content: center;
+  padding: 15px 10px;
+}
+
+.sidebar.collapsed .sidebar-nav {
+  padding: 12px 8px;
+}
+
+.sidebar.collapsed .nav-item {
+  height: 42px;
+  padding: 0;
+  justify-content: center;
+}
+
+.sidebar.collapsed .nav-item.active {
+  box-shadow: none;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  padding: 10px;
+}
+
+.sidebar.collapsed .user-block {
+  justify-content: center;
+  gap: 0;
+  padding: 2px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.sidebar.collapsed .user-avatar {
+  display: none;
 }
 
 .sidebar-logo {

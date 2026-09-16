@@ -4,6 +4,7 @@ Pure functions, no FastAPI dependency — testable without API or DB
 """
 
 import json
+import shlex
 import socket
 from dataclasses import dataclass, asdict
 from typing import Optional, Any
@@ -57,6 +58,18 @@ def _exec(ssh_client, cmd: str, timeout: int = 10) -> str:
     """Execute a command via paramiko SSHClient, return stdout."""
     stdin, stdout, stderr = ssh_client.exec_command(cmd, timeout=timeout)
     return stdout.read().decode().strip()
+
+
+def _exec_checked(ssh_client, cmd: str, timeout: int = 10) -> str:
+    """Execute a command and fail when the remote process did not complete cleanly."""
+    _stdin, stdout, stderr = ssh_client.exec_command(cmd, timeout=timeout)
+    output = stdout.read().decode(errors="replace").strip()
+    error_output = stderr.read().decode(errors="replace").strip()
+    exit_status = stdout.channel.recv_exit_status()
+    if exit_status != 0:
+        detail = error_output or f"remote command exited with status {exit_status}"
+        raise RuntimeError(detail)
+    return output
 
 
 def _is_physical_interface(iface: str) -> bool:
@@ -294,6 +307,8 @@ def get_server_info_via_ssh(
             password=password,
             key_filename=key_file,
             timeout=10,
+            banner_timeout=10,
+            auth_timeout=10,
             look_for_keys=False,
             allow_agent=False,
         )
@@ -371,14 +386,16 @@ def _interact_exec(ssh_client, command: str, expect_prompt: str = ">", timeout: 
 
     # Send the command
     chan.send(command + "\r\n")
+    tail = output[-4096:]
 
     # Read until we see the prompt again (command finished)
     while True:
         try:
             chunk = chan.recv(65535).decode('utf-8', errors='replace')
             output += chunk
-            # Look at last line to check prompt
-            last_line = output.split('\n')[-1].strip()
+            # Inspect only a bounded tail; splitting the full MAC table per chunk is O(n²).
+            tail = (tail + chunk)[-4096:]
+            last_line = tail.rsplit('\n', 1)[-1].strip()
             if last_line and not last_line.startswith(command) and (last_line.endswith('>') or last_line.endswith('#')):
                 cmd_pos = output.rfind(command)
                 last_pos = output.rfind(last_line)
@@ -413,6 +430,8 @@ def fetch_up_server_interfaces_via_ssh(
             password=password,
             key_filename=key_file,
             timeout=10,
+            banner_timeout=10,
+            auth_timeout=10,
             look_for_keys=False,
             allow_agent=False,
         )
@@ -443,6 +462,76 @@ def fetch_up_server_interfaces_via_ssh(
         client.close()
 
 
+def fetch_and_stimulate_server_interfaces_via_ssh(
+    ip: str,
+    username: str,
+    password: Optional[str] = None,
+    key_file: Optional[str] = None,
+    port: int = 22,
+) -> tuple[list[dict], Optional[str]]:
+    """Collect interfaces and trigger MAC learning over one SSH connection."""
+    import paramiko
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            ip,
+            port=port,
+            username=username,
+            password=password,
+            key_filename=key_file,
+            timeout=10,
+            banner_timeout=10,
+            auth_timeout=10,
+            look_for_keys=False,
+            allow_agent=False,
+        )
+        raw = _exec_checked(client, "ip -j addr show", timeout=10)
+        if not raw:
+            raise RuntimeError("interface command returned no output")
+        data = json.loads(raw)
+        if not isinstance(data, list):
+            raise ValueError("interface command returned invalid JSON")
+        interfaces = []
+        for item in data:
+            name = item.get("ifname") or ""
+            mac = item.get("address") or ""
+            if not _is_physical_interface(name):
+                continue
+            if item.get("operstate") != "UP" or not mac:
+                continue
+            inet = next(
+                (addr for addr in item.get("addr_info", []) if addr.get("family") == "inet"),
+                None,
+            )
+            interfaces.append({
+                "name": name,
+                "ip": inet.get("local") if inet else None,
+                "prefixlen": inet.get("prefixlen") if inet else None,
+                "mac": mac.lower(),
+                "operstate": item.get("operstate"),
+                "_ping_error": None,
+            })
+
+        if interfaces:
+            probes = []
+            for iface in interfaces:
+                quoted_iface = shlex.quote(iface["name"])
+                probes.append(
+                    f"(arping -I {quoted_iface} -c 1 -w 2 255.255.255.255 "
+                    f"|| arping -I {quoted_iface} -c 1 -w 2 0.0.0.0 "
+                    f"|| true) >/dev/null 2>&1 &"
+                )
+            _exec(client, " ".join(probes) + " wait", timeout=8)
+
+        return interfaces, None
+    except Exception as exc:
+        return [], str(exc)
+    finally:
+        client.close()
+
+
 def stimulate_mac_learning_via_ssh(
     ip: str,
     username: str,
@@ -466,6 +555,8 @@ def stimulate_mac_learning_via_ssh(
             password=password,
             key_filename=key_file,
             timeout=10,
+            banner_timeout=10,
+            auth_timeout=10,
             look_for_keys=False,
             allow_agent=False,
         )
@@ -636,7 +727,6 @@ def fetch_all_macs_from_switch_via_ssh(
     Connect to an H3C/Huawei switch once and dump the full MAC address table.
     Returns a dict: {
         "mac_map": { "xx:xx:xx:xx:xx:xx": {"interface": ..., "vlan": ...}, ... },
-        "raw_output": ...,
         "error": ...
     }
     """
@@ -651,6 +741,8 @@ def fetch_all_macs_from_switch_via_ssh(
             username=username,
             password=password,
             timeout=10,
+            banner_timeout=10,
+            auth_timeout=10,
             look_for_keys=False,
             allow_agent=False,
         )
@@ -665,13 +757,11 @@ def fetch_all_macs_from_switch_via_ssh(
                 }
         return {
             "mac_map": mac_map,
-            "raw_output": raw,
             "error": None,
         }
     except Exception as e:
         return {
             "mac_map": {},
-            "raw_output": None,
             "error": str(e),
         }
     finally:
@@ -697,6 +787,8 @@ def find_mac_on_switch_via_ssh(
             username=username,
             password=password,
             timeout=10,
+            banner_timeout=10,
+            auth_timeout=10,
             look_for_keys=False,
             allow_agent=False,
         )
@@ -840,6 +932,8 @@ def get_switch_info_via_ssh(
             username=username,
             password=password,
             timeout=10,
+            banner_timeout=10,
+            auth_timeout=10,
             look_for_keys=False,
             allow_agent=False,
         )

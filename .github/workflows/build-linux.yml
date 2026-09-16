@@ -48,12 +48,12 @@ jobs:
             /bin/bash -lc '
               set -euo pipefail
               dnf install -y python3 python3-pip python3-devel
-              PYTHON=/usr/bin/python3
-              "${PYTHON}" -c "import sys, sysconfig; print(sys.version); print(\"Py_ENABLE_SHARED=\", sysconfig.get_config_var(\"Py_ENABLE_SHARED\"))"
+              ENVIROMENTS_PYTHON=/usr/bin/python3
+              "${ENVIROMENTS_PYTHON}" -c "import sys, sysconfig; print(sys.version); shared = sysconfig.get_config_var(\"Py_ENABLE_SHARED\"); print(\"Py_ENABLE_SHARED=\", shared); assert sys.version_info[:2] == (3, 9); assert shared == 1"
 
-              "${PYTHON}" -m pip install --upgrade pip
-              "${PYTHON}" -m pip install -r requirements.txt pyinstaller
-              "${PYTHON}" -m PyInstaller Enviroments.spec --noconfirm --clean --distpath ../dist --workpath ../build
+              "${ENVIROMENTS_PYTHON}" -m pip install --upgrade pip
+              "${ENVIROMENTS_PYTHON}" -m pip install -r requirements.txt -r requirements-build.txt
+              "${ENVIROMENTS_PYTHON}" -m PyInstaller Enviroments.spec --noconfirm --clean --distpath ../dist --workpath ../build
               ldd --version > /tmp/ldd-version.txt 2>&1
               head -n 1 /tmp/ldd-version.txt
             '

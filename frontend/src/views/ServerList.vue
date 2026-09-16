@@ -493,12 +493,15 @@ async function remove(row) {
 
 async function checkAllStatus() {
   checkingAll.value = true
-  const promises = servers.value.map(s => serverApi.checkStatus(s.id).catch(() => null))
-  const results = await Promise.all(promises)
-  await loadServers()
-  checkingAll.value = false
-  const online = results.filter(r => r?.online).length
-  ElMessage.info(`检测完成：${online}/${results.length} 在线`)
+  try {
+    const result = await serverApi.checkStatusBatch(servers.value.map(s => s.id))
+    await loadServers()
+    ElMessage.info(`检测完成：${result.online}/${result.total} 在线`)
+  } catch (e) {
+    ElMessage.error(`检测失败：${e.response?.data?.detail || e.message}`)
+  } finally {
+    checkingAll.value = false
+  }
 }
 
 async function handleOccupy(row) {

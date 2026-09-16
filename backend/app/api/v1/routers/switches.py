@@ -1,6 +1,5 @@
 import json
-import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -14,18 +13,15 @@ from app.api.v1.schemas import (
     SwitchDetailResponse, SwitchStatusResponse,
 )
 from infrastructure.ssh_client import get_switch_info_via_ssh, check_online, SwitchInfo
-from app.core.audit_log import LOG_DIR as _LOG_DIR
+from app.core.audit_log import LOG_DIR as _LOG_DIR, append_json_log
 
 router = APIRouter(prefix="/switches", tags=["switches"], dependencies=[Depends(get_current_user)])
 
 
 def _write_log(switch_id: int, payload: dict):
-    os.makedirs(_LOG_DIR, exist_ok=True)
     payload = dict(payload)
-    payload["time"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    line = json.dumps(payload, ensure_ascii=False)
-    with open(os.path.join(_LOG_DIR, f"switch_{switch_id}.log"), "a", encoding="utf-8") as f:
-        f.write(line + "\n")
+    payload["time"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+    append_json_log(f"{_LOG_DIR}/switch_{switch_id}.log", payload)
 
 
 def _server_cached_hostname(server: Server) -> Optional[str]:
