@@ -116,9 +116,20 @@ def _pci_of_interface(ssh_client, iface: str) -> dict:
             # Extract description after first [CATEGORY]:
             desc_m = re.match(r'.*?\]\s*:\s*(.*)', rest)
             desc = desc_m.group(1) if desc_m else rest
-            # Remove subsystem [VENDOR:PRODUCT] and (rev ...)
-            desc = re.sub(r'\s*\[[0-9a-f]{4}:[0-9a-f]{4}\].*', '', desc)
-            desc = re.sub(r'\s*\(rev.*\)$', '', desc).strip()
+            # Drop trailing (rev ...) first.
+            desc = re.sub(r'\s*\(rev.*\)$', '', desc)
+            # `-nn` appends a [VVVV:DDDD] code block to the readable name.
+            # Drop it, but for unrecognized devices whose name ends with
+            # "Device", keep the device id so e.g. a Huawei card shows as
+            # "Huawei Technologies Co., Ltd. Device 0229" instead of just
+            # "Huawei Technologies Co., Ltd. Device".
+            m_id = re.search(r'\s*\[([0-9a-fA-F]{4}):([0-9a-fA-F]{4})\]', desc)
+            if m_id:
+                head = desc[:m_id.start()].rstrip()
+                if re.search(r'device\s*$', head, re.IGNORECASE):
+                    head = f"{head} {m_id.group(2)}"
+                desc = head
+            desc = desc.strip()
             pci_map[current_pci] = {'desc': desc, 'driver': None}
         elif current_pci and 'Kernel driver in use:' in line:
             pci_map[current_pci]['driver'] = line.split('in use:')[-1].strip()
