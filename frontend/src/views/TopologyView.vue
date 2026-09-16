@@ -339,11 +339,12 @@ const selectedRows = computed(() => {
   return rows.map(link => {
     const switchNode = nodeMap.value.get(`switch-${link.switch_id}`)
     const serverNode = nodeMap.value.get(`server-${link.server_id}`)
+    const device = link.server_device_model ? ` ${link.server_device_model}` : ''
     return {
       id: link.id,
       title: node.type === 'server'
-        ? `${switchNode?.label || '交换机'} ${link.switch_interface || '-'} → ${link.server_interface || '-'}`
-        : `${link.switch_interface || '-'} → ${serverNode?.ip || '服务器'} ${link.server_interface || '-'}`,
+        ? `${switchNode?.label || '交换机'} ${link.switch_interface || '-'} → ${link.server_interface || '-'}${device}`
+        : `${link.switch_interface || '-'} → ${serverNode?.ip || '服务器'} ${link.server_interface || '-'}${device}`,
       vlan: link.vlan ? `VLAN ${link.vlan}` : 'VLAN -',
       description: link.server_mac || '端口链路',
     }
@@ -371,7 +372,8 @@ function serverLinkLabels(id) {
   const rows = (linksByServer.value.get(id) || []).slice(0, 3)
   if (!rows.length) return ['未发现端口']
   return rows.map(link => {
-    return `${link.switch_interface || '-'} ↔ ${link.server_interface || '-'}`
+    const device = link.server_device_model ? ` ${link.server_device_model}` : ''
+    return `${link.switch_interface || '-'} ↔ ${link.server_interface || '-'}${device}`
   })
 }
 
