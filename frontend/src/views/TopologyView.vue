@@ -16,6 +16,16 @@
           <el-icon><Connection /></el-icon> 重新生成拓扑图
         </el-button>
       </el-tooltip>
+      <el-select
+        v-model="selectedPci"
+        placeholder="按 PCI 设备筛选"
+        clearable
+        filterable
+        style="width: 300px"
+        @change="onPciFilterChange"
+      >
+        <el-option v-for="device in allPciList" :key="device" :label="device" :value="device" />
+      </el-select>
       <el-tag type="success">链路 {{ foundLinks.length }}</el-tag>
       <el-tag type="info">交换机 {{ switchNodes.length }}</el-tag>
       <el-tag type="info">服务器 {{ serverNodes.length }}</el-tag>
@@ -94,7 +104,10 @@
         <div ref="scrollbarRef" class="canvas-scrollbar" @mousedown="onScrollbarMouseDown">
           <div ref="thumbRef" class="canvas-thumb" @mousedown.stop="onThumbMouseDown"></div>
         </div>
-        <el-empty v-if="!nodes.length" description="暂无拓扑数据" />
+        <el-empty
+          v-if="!positionedNodes.length"
+          :description="nodes.length ? '无匹配 PCI 设备的节点' : '暂无拓扑数据'"
+        />
       </section>
 
       <aside class="inspector-panel">
@@ -181,6 +194,7 @@ const links = ref([])
 const selectedNodeId = ref(null)
 const activeServerId = ref(null)
 const activeSwitchId = ref(null)
+const selectedPci = ref('')
 
 const canvasRef = ref(null)
 const scrollbarRef = ref(null)
@@ -198,9 +212,79 @@ const SERVER_COL_GAP = 240
 const SERVER_ROW_GAP = 118
 const SERVER_COLS = 2
 
-const switchNodes = computed(() => nodes.value.filter(n => n.type === 'switch'))
-const serverNodes = computed(() => nodes.value.filter(n => n.type === 'server'))
-const foundLinks = computed(() => links.value.filter(link => link.status === 'found'))
+// ── PCI 设备筛选 ──────────────────────────────────────────────────────────────────
+
+const allPciList = computed(() => {
+  const seen = new Set()
+  for (const node of nodes.value) {
+    for (const device of node.pci_devices || []) {
+      const text = String(device).trim()
+      if (text) seen.add(text)
+    }
+  }
+  return [...seen].sort((a, b) => a.localeCompare(b, 'en'))
+})
+
+/** 选中 PCI 设备时匹配的节点 id 集合；未筛选返回 null。
+ *  规则：显示包含所选 PCI 设备的服务器/交换机，并保留与匹配服务器直连的交换机，保证拓扑连通。 */
+const visibleNodeIds = computed(() => {
+  const selected = selectedPci.value.trim()
+  if (!selected) return null
+  const matched = new Set()
+  const matchedServers = new Set()
+  for (const node of nodes.value) {
+    if ((node.pci_devices || []).some(device => String(device).trim() === selected)) {
+      matched.add(node.id)
+      if (node.type === 'server') matchedServers.add(node.entity_id)
+    }
+  }
+  const linkedSwitches = new Set()
+  for (const link of links.value) {
+    if (matchedServers.has(link.server_id)) linkedSwitches.add(`switch-${link.switch_id}`)
+  }
+  for (const edge of edges.value) {
+    if (edge.kind === 'association') {
+      const serverId = Number(String(edge.target).replace('server-', ''))
+      if (matchedServers.has(serverId)) linkedSwitches.add(edge.source)
+    }
+  }
+  linkedSwitches.forEach(id => matched.add(id))
+  return matched
+})
+
+const visibleNodes = computed(() => {
+  const ids = visibleNodeIds.value
+  return ids ? nodes.value.filter(node => ids.has(node.id)) : nodes.value
+})
+
+const visibleLinks = computed(() => {
+  const ids = visibleNodeIds.value
+  if (!ids) return links.value
+  return links.value.filter(
+    link => ids.has(`server-${link.server_id}`) && ids.has(`switch-${link.switch_id}`)
+  )
+})
+
+const visibleEdges = computed(() => {
+  const ids = visibleNodeIds.value
+  if (!ids) return edges.value
+  return edges.value.filter(edge => ids.has(edge.source) && ids.has(edge.target))
+})
+
+function onPciFilterChange() {
+  selectedNodeId.value = null
+  resetView()
+}
+
+watch(allPciList, (list) => {
+  if (selectedPci.value && !list.includes(selectedPci.value)) {
+    selectedPci.value = ''
+  }
+})
+
+const switchNodes = computed(() => visibleNodes.value.filter(n => n.type === 'switch'))
+const serverNodes = computed(() => visibleNodes.value.filter(n => n.type === 'server'))
+const foundLinks = computed(() => visibleLinks.value.filter(link => link.status === 'found'))
 const viewBoxStr = computed(() => `${view.value.x} ${view.value.y} ${view.value.w} ${view.value.h}`)
 const isDefaultView = computed(() => view.value.x === 0 && view.value.y === 0 && view.value.w === world.value.width)
 
@@ -347,7 +431,7 @@ const positionedEdges = computed(() =>
 )
 
 const positionedAssocEdges = computed(() =>
-  edges.value
+  visibleEdges.value
     .filter(e => e.kind === 'association')
     .map(edge => {
       const source = positionedNodeMap.value.get(edge.source)
