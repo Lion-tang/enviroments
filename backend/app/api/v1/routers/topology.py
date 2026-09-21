@@ -60,6 +60,24 @@ def _server_iface_devices(server: Server) -> dict:
     return result
 
 
+def _node_pci_devices(cached_info: Optional[str]) -> list:
+    """cached_info → deduped non-empty PCI device descriptions (e.g. 'Huawei Technologies Co., Ltd. Device 0222')."""
+    if not cached_info:
+        return []
+    try:
+        cached = json.loads(cached_info)
+    except (ValueError, TypeError):
+        return []
+    seen = set()
+    for itf in cached.get("interfaces") or []:
+        desc = itf.get("pci_desc")
+        if desc and isinstance(desc, str):
+            desc = desc.strip()
+        if desc:
+            seen.add(desc)
+    return sorted(seen)
+
+
 def _server_label(server: Server) -> str:
     return server.ip
 
@@ -129,6 +147,7 @@ def get_topology(db: Session = Depends(get_db)):
             "online": switch.is_online,
             "tags": switch.tags,
             "assoc_count": len(switch.servers) if switch.servers else 0,
+            "pci_devices": _node_pci_devices(switch.cached_info),
         })
 
     for server in servers:
@@ -142,6 +161,7 @@ def get_topology(db: Session = Depends(get_db)):
             "tags": server.tags,
             "occupied_by": server.occupied_by,
             "assoc_count": len(server.switches) if server.switches else 0,
+            "pci_devices": _node_pci_devices(server.cached_info),
         })
 
     discovered = [
